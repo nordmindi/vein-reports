@@ -48,7 +48,7 @@ class TradingAgentsClient:
         payload = {
             "ticker": ticker,
             "analysis_date": analysis_date,
-            "selected_analysts": analysts or ["market", "news", "fundamentals"],
+            "selected_analysts": analysts or ["market", "social", "news", "fundamentals"],
             **kwargs
         }
         
@@ -62,6 +62,42 @@ class TradingAgentsClient:
             return response.json()
         else:
             response.raise_for_status()
+
+    def get_report_json(self, job_id):
+        """Download the full final-state JSON for a completed report."""
+        response = requests.get(
+            f"{self.base_url}/v1/reports/{job_id}/json",
+            headers=self.headers
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_report_dashboard(self, job_id):
+        """Download dashboard.json for a completed report."""
+        response = requests.get(
+            f"{self.base_url}/v1/reports/{job_id}/dashboard",
+            headers=self.headers
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_validation_report(self, job_id):
+        """Download validation_report.json for a completed report."""
+        response = requests.get(
+            f"{self.base_url}/v1/reports/{job_id}/validation",
+            headers=self.headers
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def get_decision_evidence(self, job_id):
+        """Download decision_evidence_bundle.json for a completed report."""
+        response = requests.get(
+            f"{self.base_url}/v1/reports/{job_id}/evidence",
+            headers=self.headers
+        )
+        response.raise_for_status()
+        return response.json()
     
     def get_report_status(self, job_id):
         """
@@ -148,7 +184,8 @@ def main():
     job = client.submit_report(
         ticker="NVDA",
         analysis_date="2026-05-07",
-        analysts=["market", "news", "fundamentals"],
+        analysts=["market", "social", "news", "fundamentals"],
+        report_tier="pro",
         max_debate_rounds=1,
         max_risk_discuss_rounds=1
     )
@@ -166,6 +203,10 @@ def main():
             print(f"PDF downloaded to: {pdf_filename}")
         else:
             print("Failed to download PDF")
+
+        dashboard = client.get_report_dashboard(job["job_id"])
+        print(f"Published recommendation: {dashboard.get('recommendation')}")
+        print(f"Published action: {dashboard.get('action')}")
             
     except Exception as e:
         print(f"Error: {e}")

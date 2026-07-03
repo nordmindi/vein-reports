@@ -28,6 +28,7 @@
 # TradingAgents: Multi-Agents LLM Financial Trading Framework
 
 ## Recent Fixes
+- **Service API and VEIN context**: The report service now documents `context_bundle` in Swagger, supports the `supply_chain` analyst, persists job status for polling across workers, and exposes dashboard, validation, and evidence artifacts through API endpoints.
 - **Asset Handling**: Fixed issue where logos were not appearing in PDF reports in production builds. Assets are now properly included in package distributions.
 
 ## News
@@ -74,6 +75,7 @@ Our framework decomposes complex trading tasks into specialized roles. This ensu
 - Sentiment Analyst: Analyzes social media and public sentiment using sentiment scoring algorithms to gauge short-term market mood.
 - News Analyst: Monitors global news and macroeconomic indicators, interpreting the impact of events on market conditions.
 - Technical Analyst: Utilizes technical indicators (like MACD and RSI) to detect trading patterns and forecast price movements.
+- Supply Chain Analyst: Uses optional VEIN `context_bundle` data to summarize structural exposures, chokepoints, downstream products, and supply-chain peer tickers without issuing recommendations.
 
 <p align="center">
   <img src="assets/analyst.png" width="100%" style="display: inline-block; margin: 0 2%;">
@@ -285,7 +287,7 @@ docker-compose -f docker-compose.service.yml up
 
 For detailed deployment instructions for cloud environments (Kubernetes, AWS, GCP, Azure), see `DEPLOYMENT.md` and the `k8s/` directory.
 
-The service provides a REST API for submitting report jobs, checking status, and downloading PDF reports. See `docs/saas-service-api.md` for API documentation and `scripts/client_example.py` for a client implementation example.
+The service provides a REST API for submitting report jobs, checking status, downloading PDFs, and fetching machine-readable dashboard, validation, evidence, and full-state JSON artifacts. Swagger is available at `/docs` when the service is running. See `docs/saas-service-api.md` for the current API contract, `docs/trading-report-service-vein-integration.md` for VEIN supply-chain context details, and `scripts/client_example.py` for a client implementation example.
 
 ## Persistence and Recovery
 

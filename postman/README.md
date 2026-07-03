@@ -9,6 +9,9 @@ The Postman collection includes requests for all API endpoints:
 - Report job creation (with various configurations)
 - Job status polling
 - PDF report download
+- Full-state JSON download
+- Dashboard, validation, and evidence artifact downloads
+- VEIN `context_bundle` report creation
 
 ## Setup Instructions
 
@@ -40,6 +43,7 @@ The Postman collection includes requests for all API endpoints:
 - `POST /v1/reports` - Create a full report job with all options
 - `POST /v1/reports` - Create a minimal report job
 - `POST /v1/reports` - Create a report job with all analyst types
+- `POST /v1/reports` - Create a report job with VEIN supply-chain context
 - `POST /v1/reports` - Error case: Invalid ticker
 - `POST /v1/reports` - Error case: Invalid date format
 - `POST /v1/reports` - Error case: Future date
@@ -51,6 +55,12 @@ The Postman collection includes requests for all API endpoints:
 ### PDF Download
 - `GET /v1/reports/{job_id}/pdf` - Download completed report PDF
 - `GET /v1/reports/invalid-job-id/pdf` - Error case: Invalid job ID for PDF download
+
+### JSON Artifacts
+- `GET /v1/reports/{job_id}/json` - Download full final-state JSON
+- `GET /v1/reports/{job_id}/dashboard` - Download the canonical public recommendation/action artifact
+- `GET /v1/reports/{job_id}/validation` - Download validation status and blocking issues
+- `GET /v1/reports/{job_id}/evidence` - Download the decision evidence bundle
 
 ## Testing Workflow
 
@@ -66,6 +76,7 @@ The Postman collection includes requests for all API endpoints:
 
 4. **Download the Report**
    - Once the job is completed, run "Download Report PDF" to get the report
+   - Run the JSON artifact requests when testing downstream dashboard integration
 
 ## Error Testing
 
@@ -85,6 +96,7 @@ These requests help verify that the service properly validates input and handles
 3. Run "Get Report Job Status" with that job_id
 4. Repeat step 3 until status is "completed"
 5. Run "Download Report PDF" to get the report
+6. Run "Download Dashboard JSON" to verify the public recommendation/action state
 
 ### Testing Error Cases
 1. Run "Create Report Job - Invalid Ticker"

@@ -181,6 +181,58 @@
       "response": []
     },
     {
+      "name": "Create Report Job - VEIN Context",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Accepted\", function () {",
+              "  pm.expect(pm.response.code).to.eql(202);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "if (json.job_id) {",
+              "  pm.collectionVariables.set(\"job_id\", json.job_id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"ticker\": \"TSLA\",\n  \"analysis_date\": \"2026-06-30\",\n  \"report_tier\": \"pro\",\n  \"selected_analysts\": [\"market\", \"social\", \"news\", \"fundamentals\"],\n  \"context_bundle\": {\n    \"version\": \"vein-context-v1\",\n    \"primary_symbol\": \"TSLA\",\n    \"has_graph_coverage\": true,\n    \"company\": {\n      \"name\": \"Tesla, Inc.\",\n      \"symbol\": \"TSLA\",\n      \"is_chokepoint\": false\n    },\n    \"anchor_elements\": [{ \"name\": \"Electric vehicles\" }],\n    \"downstream_products\": [],\n    \"related_companies\": [],\n    \"chokepoints\": [],\n    \"peer_tickers_for_news\": [],\n    \"watchlist_notes\": null,\n    \"generated_at\": \"2026-06-30T18:00:00.000Z\"\n  }\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/reports",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports"
+          ]
+        },
+        "description": "Creates a pro report job with VEIN supply-chain context. The service auto-adds the supply_chain analyst."
+      },
+      "response": []
+    },
+    {
       "name": "Create Report Job - Invalid Ticker",
       "event": [
         {
@@ -534,6 +586,138 @@
           ]
         },
         "description": "Attempts to download JSON for a non-existent job ID."
+      },
+      "response": []
+    },
+    {
+      "name": "Download Dashboard JSON",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Success\", function () {",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "});",
+              "",
+              "pm.test(\"Response is JSON\", function () {",
+              "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/reports/{{job_id}}/dashboard",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports",
+            "{{job_id}}",
+            "dashboard"
+          ]
+        },
+        "description": "Downloads dashboard.json, the canonical public recommendation/action artifact."
+      },
+      "response": []
+    },
+    {
+      "name": "Download Validation JSON",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Success\", function () {",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "});",
+              "",
+              "pm.test(\"Response is JSON\", function () {",
+              "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/reports/{{job_id}}/validation",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports",
+            "{{job_id}}",
+            "validation"
+          ]
+        },
+        "description": "Downloads validation_report.json with blocking issues and metadata."
+      },
+      "response": []
+    },
+    {
+      "name": "Download Evidence JSON",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Success\", function () {",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "});",
+              "",
+              "pm.test(\"Response is JSON\", function () {",
+              "  pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/v1/reports/{{job_id}}/evidence",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports",
+            "{{job_id}}",
+            "evidence"
+          ]
+        },
+        "description": "Downloads decision_evidence_bundle.json for audit and dashboard integration."
       },
       "response": []
     },

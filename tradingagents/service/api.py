@@ -15,7 +15,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tradingagents.service.runner import (
     ReportRequest,
@@ -48,11 +48,166 @@ class ReportTier(str, Enum):
     pro = "pro"
 
 
+class VeinCompany(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str | None = Field(default=None, examples=["Tesla, Inc."])
+    symbol: str | None = Field(default=None, examples=["TSLA"])
+    is_chokepoint: bool | None = Field(default=None)
+
+
+class VeinAnchorElement(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str = Field(..., examples=["Electric vehicles"])
+
+
+class VeinDownstreamProduct(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str = Field(..., examples=["EV battery packs"])
+    category: str | None = Field(default=None, examples=["energy"])
+    hops: int | None = Field(default=None, ge=0, examples=[1])
+    is_chokepoint: bool | None = Field(default=None)
+
+
+class VeinRelatedCompany(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    symbol: str = Field(..., examples=["ALB"])
+    name: str | None = Field(default=None, examples=["Albemarle Corporation"])
+    via: str | None = Field(default=None, examples=["Lithium refining"])
+    via_chokepoint: bool | None = Field(default=None)
+
+
+class VeinChokepoint(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str = Field(..., examples=["Lithium refining"])
+    category: str | None = Field(default=None, examples=["materials"])
+    hops: int | None = Field(default=None, ge=0, examples=[1])
+    via: str | None = Field(default=None, examples=["ALB"])
+
+
+class VeinContextBundle(BaseModel):
+    """Supply-chain context supplied by Vein Explorer."""
+
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "example": {
+                "version": "vein-context-v1",
+                "primary_symbol": "TSLA",
+                "has_graph_coverage": True,
+                "company": {
+                    "name": "Tesla, Inc.",
+                    "symbol": "TSLA",
+                    "is_chokepoint": False,
+                },
+                "anchor_elements": [{"name": "Electric vehicles"}],
+                "downstream_products": [
+                    {
+                        "name": "EV battery packs",
+                        "category": "energy",
+                        "hops": 1,
+                        "is_chokepoint": True,
+                    }
+                ],
+                "related_companies": [
+                    {
+                        "symbol": "ALB",
+                        "name": "Albemarle Corporation",
+                        "via": "Lithium refining",
+                        "via_chokepoint": True,
+                    }
+                ],
+                "chokepoints": [
+                    {"name": "EV battery packs", "category": "energy", "hops": 1},
+                    {"name": "Lithium refining", "category": None, "hops": 0, "via": "ALB"},
+                ],
+                "peer_tickers_for_news": ["ALB"],
+                "watchlist_notes": "Focus on margin and battery supply",
+                "generated_at": "2026-06-30T18:00:00.000Z",
+            }
+        },
+    )
+
+    version: str = Field(default="vein-context-v1", examples=["vein-context-v1"])
+    primary_symbol: str = Field(..., examples=["TSLA"])
+    has_graph_coverage: bool = Field(
+        ...,
+        description="True when Vein Graph has structural coverage for the ticker.",
+    )
+    company: VeinCompany | None = None
+    anchor_elements: list[VeinAnchorElement] = Field(default_factory=list)
+    downstream_products: list[VeinDownstreamProduct] = Field(default_factory=list)
+    related_companies: list[VeinRelatedCompany] = Field(default_factory=list)
+    chokepoints: list[VeinChokepoint] = Field(default_factory=list)
+    peer_tickers_for_news: list[str] = Field(
+        default_factory=list,
+        description="Supplemental peer symbols used only when primary news coverage is thin.",
+        examples=[["ALB", "LIT"]],
+    )
+    watchlist_notes: str | None = Field(
+        default=None,
+        description="User-authored Vein watchlist notes. Use only as framing, not verified evidence.",
+    )
+    generated_at: str | None = Field(default=None, examples=["2026-06-30T18:00:00.000Z"])
+
+
 class CreateReportRequest(BaseModel):
-    ticker: str = Field(..., min_length=1, max_length=32)
-    analysis_date: str | None = None
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "ticker": "NVDA",
+                    "analysis_date": "2026-05-07",
+                    "report_tier": "pro",
+                    "selected_analysts": ["market", "social", "news", "fundamentals"],
+                    "llm_provider": "ollama",
+                    "deep_think_llm": "glm-5.2:cloud",
+                    "quick_think_llm": "glm-5.2:cloud",
+                    "max_debate_rounds": 1,
+                    "max_risk_discuss_rounds": 1,
+                    "output_language": "English",
+                    "user_id": "saas-user-id",
+                },
+                {
+                    "ticker": "TSLA",
+                    "analysis_date": "2026-06-30",
+                    "report_tier": "pro",
+                    "context_bundle": {
+                        "version": "vein-context-v1",
+                        "primary_symbol": "TSLA",
+                        "has_graph_coverage": True,
+                        "company": {
+                            "name": "Tesla, Inc.",
+                            "symbol": "TSLA",
+                            "is_chokepoint": False,
+                        },
+                        "anchor_elements": [{"name": "Electric vehicles"}],
+                        "downstream_products": [],
+                        "related_companies": [],
+                        "chokepoints": [],
+                        "peer_tickers_for_news": [],
+                        "watchlist_notes": None,
+                        "generated_at": "2026-06-30T18:00:00.000Z",
+                    },
+                },
+            ]
+        }
+    )
+
+    ticker: str = Field(..., min_length=1, max_length=32, examples=["NVDA"])
+    analysis_date: str | None = Field(
+        default=None,
+        description="Analysis date in YYYY-MM-DD format. Defaults to the service date.",
+        examples=["2026-05-07"],
+    )
     selected_analysts: list[str] = Field(
-        default_factory=lambda: ["market", "social", "news", "fundamentals"]
+        default_factory=lambda: ["market", "social", "news", "fundamentals"],
+        description="Allowed values: market, social, news, fundamentals, supply_chain.",
+        examples=[["market", "social", "news", "fundamentals"]],
     )
     llm_provider: str | None = None
     deep_think_llm: str | None = None
@@ -63,8 +218,17 @@ class CreateReportRequest(BaseModel):
     max_risk_discuss_rounds: int | None = Field(default=None, ge=1)
     checkpoint_enabled: bool | None = None
     user_id: str | None = Field(default=None, max_length=128)
-    report_tier: ReportTier = ReportTier.pro  # Default to pro for backward compatibility
-    context_bundle: dict[str, Any] | None = None
+    report_tier: ReportTier = Field(
+        default=ReportTier.pro,
+        description="Free tier runs only the market analyst. Pro tier supports all analysts and VEIN context.",
+    )
+    context_bundle: VeinContextBundle | None = Field(
+        default=None,
+        description=(
+            "Optional VEIN supply-chain context. For pro jobs, supplying this automatically "
+            "adds the supply_chain analyst if it was not selected."
+        ),
+    )
 
     @field_validator("ticker")
     @classmethod
@@ -82,6 +246,10 @@ class CreateReportResponse(BaseModel):
     status: JobStatus
     status_url: str
     pdf_url: str
+    json_url: str
+    dashboard_url: str
+    validation_url: str
+    evidence_url: str
 
 
 class ReportJobResponse(BaseModel):
@@ -95,6 +263,9 @@ class ReportJobResponse(BaseModel):
     pdf_path: str | None = None
     pdf_url: str | None = None
     json_url: str | None = None
+    dashboard_url: str | None = None
+    validation_url: str | None = None
+    evidence_url: str | None = None
 
 
 class JobRecord:
@@ -283,6 +454,47 @@ def _get_job(job_id: str) -> JobRecord:
     return record
 
 
+def _report_url(job_id: str, suffix: str) -> str:
+    return f"/v1/reports/{job_id}/{suffix}"
+
+
+def _read_completed_artifact(job_id: str, filename: str) -> dict[str, Any]:
+    record = _get_job(job_id)
+    if record.status != JobStatus.completed or record.result is None:
+        logger.warning(
+            "Artifact download attempted for incomplete job | Job: %s | Status: %s",
+            job_id,
+            record.status,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"job is {record.status}",
+        )
+
+    artifact_path = Path(record.result.report_dir) / filename
+    if not artifact_path.exists():
+        logger.error("Artifact not found | Job: %s | Path: %s", job_id, artifact_path)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"{filename} not found",
+        )
+
+    try:
+        return json.loads(artifact_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.error(
+            "Failed to read artifact | Job: %s | File: %s | Error: %s",
+            job_id,
+            filename,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"failed to read {filename}",
+        ) from exc
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     active_jobs = sum(1 for j in jobs.values() if j.status == JobStatus.running)
@@ -299,6 +511,11 @@ def health() -> dict[str, str]:
 def create_report(payload: CreateReportRequest) -> CreateReportResponse:
     analysis_date = payload.analysis_date or datetime.now().strftime("%Y-%m-%d")
     job_id = uuid4().hex
+    context_bundle = (
+        payload.context_bundle.model_dump(mode="json")
+        if payload.context_bundle is not None
+        else None
+    )
     
     # Apply tier-based configurations
     selected_analysts = list(payload.selected_analysts)
@@ -315,7 +532,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
             f"Date: {analysis_date} | Analysts: {selected_analysts}"
         )
     else:
-        if payload.context_bundle is not None and "supply_chain" not in selected_analysts:
+        if context_bundle is not None and "supply_chain" not in selected_analysts:
             selected_analysts.append("supply_chain")
         # Pro tier: full configuration
         logger.info(
@@ -336,7 +553,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         max_risk_discuss_rounds=max_risk_discuss_rounds,
         checkpoint_enabled=payload.checkpoint_enabled,
         user_id=payload.user_id,
-        context_bundle=payload.context_bundle,
+        context_bundle=context_bundle,
     )
     try:
         validate_report_request(request)
@@ -358,7 +575,11 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         job_id=job_id,
         status=record.status,
         status_url=f"/v1/reports/{job_id}",
-        pdf_url=f"/v1/reports/{job_id}/pdf",
+        pdf_url=_report_url(job_id, "pdf"),
+        json_url=_report_url(job_id, "json"),
+        dashboard_url=_report_url(job_id, "dashboard"),
+        validation_url=_report_url(job_id, "validation"),
+        evidence_url=_report_url(job_id, "evidence"),
     )
 
 
@@ -382,8 +603,11 @@ def get_report(job_id: str) -> ReportJobResponse:
         error=record.error,
         markdown_path=str(result.markdown_path) if result else None,
         pdf_path=str(result.pdf_path) if result else None,
-        pdf_url=f"/v1/reports/{job_id}/pdf" if result else None,
-        json_url=f"/v1/reports/{job_id}/json" if result else None,
+        pdf_url=_report_url(job_id, "pdf") if result else None,
+        json_url=_report_url(job_id, "json") if result else None,
+        dashboard_url=_report_url(job_id, "dashboard") if result else None,
+        validation_url=_report_url(job_id, "validation") if result else None,
+        evidence_url=_report_url(job_id, "evidence") if result else None,
     )
 
 
@@ -427,6 +651,36 @@ def download_report_json(job_id: str) -> dict:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to read report data",
         )
+
+
+@app.get(
+    "/v1/reports/{job_id}/dashboard",
+    dependencies=[Depends(require_service_key)],
+    summary="Download the canonical report dashboard artifact",
+)
+def download_report_dashboard(job_id: str) -> dict[str, Any]:
+    """Return dashboard.json, the machine-readable public recommendation summary."""
+    return _read_completed_artifact(job_id, "dashboard.json")
+
+
+@app.get(
+    "/v1/reports/{job_id}/validation",
+    dependencies=[Depends(require_service_key)],
+    summary="Download the validation report artifact",
+)
+def download_validation_report(job_id: str) -> dict[str, Any]:
+    """Return validation_report.json with blocking issues, metadata, and evidence status."""
+    return _read_completed_artifact(job_id, "validation_report.json")
+
+
+@app.get(
+    "/v1/reports/{job_id}/evidence",
+    dependencies=[Depends(require_service_key)],
+    summary="Download the decision evidence bundle",
+)
+def download_decision_evidence(job_id: str) -> dict[str, Any]:
+    """Return decision_evidence_bundle.json for downstream audit and dashboard ingestion."""
+    return _read_completed_artifact(job_id, "decision_evidence_bundle.json")
 
 
 @app.get("/v1/reports/{job_id}/pdf", dependencies=[Depends(require_service_key)])
