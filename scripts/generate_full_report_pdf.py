@@ -388,7 +388,9 @@ class MarkdownPDFGenerator:
 
         body_rows = rows[1:] or rows
         min_widths = []
-        desired_widths = []
+        max_widths = []
+        content_widths = []
+        
         for col_idx in range(col_count):
             header = rows[0][col_idx]
             cells = [row[col_idx] for row in body_rows]
@@ -397,46 +399,48 @@ class MarkdownPDFGenerator:
             self.pdf.set_font("helvetica", "B", 8.0)
             header_width = self.pdf.get_string_width(header) + padding
             self.pdf.set_font("helvetica", "", 8.0)
-            word_width = max(
-                [self.pdf.get_string_width(word) for cell in all_cells for word in cell.split()]
-                or [0]
-            ) + padding
-            full_width = max([self.pdf.get_string_width(cell) for cell in all_cells] or [0]) + padding
-            avg_chars = sum(len(cell) for cell in cells) / max(1, len(cells))
-
-            min_width = max(10, min(max(header_width, word_width), 44))
-            desired_cap = max(22, min(total_width * 0.58, 34 + avg_chars * 0.75))
-            desired = max(min_width, min(full_width, desired_cap))
+            
+            # Calculate max width needed for any cell in this column
+            max_cell_width = max([self.pdf.get_string_width(cell) for cell in all_cells] or [0]) + padding
+            
+            # Calculate average content length for this column
+            avg_content_length = sum(len(str(cell)) for cell in all_cells) / max(1, len(all_cells))
+            
+            # Set minimum width based on content
+            min_width = max(12, min(20, max_cell_width * 0.3))  # Minimum 12pt, max 20pt, scaled to content
+            
+            # Set maximum width based on content
+            max_width = min(total_width * 0.6, max(30, max_cell_width))  # Max 60% of total width or max cell width, minimum 30pt
+            
             min_widths.append(min_width)
-            desired_widths.append(desired)
+            max_widths.append(max_width)
+            content_widths.append(max_cell_width)
 
-        min_total = sum(min_widths)
-        if min_total >= total_width:
-            scale = total_width / min_total
-            return [width * scale for width in min_widths]
-
-        desired_total = sum(desired_widths)
-        if desired_total <= total_width:
-            extra = total_width - desired_total
-            priorities = [
-                max(1.0, sum(len(row[col_idx]) for row in rows) / max(1, len(rows)))
-                for col_idx in range(col_count)
-            ]
-            priority_total = sum(priorities)
-            return [
-                desired_widths[i] + extra * (priorities[i] / priority_total)
+        # Calculate proportional widths based on content
+        total_content_width = sum(content_widths)
+        if total_content_width > 0:
+            # Proportional allocation based on content width
+            proportional_widths = [
+                max(min_widths[i], min(max_widths[i], (content_widths[i] / total_content_width) * total_width * 0.9))
                 for i in range(col_count)
             ]
+            
+            # Adjust to fit exactly within total_width
+            current_total = sum(proportional_widths)
+            if current_total > 0:
+                scale_factor = total_width / current_total
+                scaled_widths = [width * scale_factor for width in proportional_widths]
+                
+                # Ensure widths stay within min/max bounds
+                final_widths = []
+                for i in range(col_count):
+                    width = max(min_widths[i], min(max_widths[i], scaled_widths[i]))
+                    final_widths.append(width)
+                
+                return final_widths
 
-        shrinkable = [desired_widths[i] - min_widths[i] for i in range(col_count)]
-        shrink_total = sum(shrinkable)
-        overflow = desired_total - total_width
-        if shrink_total <= 0:
-            return min_widths
-        return [
-            desired_widths[i] - overflow * (shrinkable[i] / shrink_total)
-            for i in range(col_count)
-        ]
+        # Fallback to equal distribution if content-based calculation fails
+        return [total_width / col_count for _ in range(col_count)]
 
     def _draw_table_header(self, row, widths):
         self._draw_table_row(row, widths, is_header=True, fill=True)

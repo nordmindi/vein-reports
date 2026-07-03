@@ -24,7 +24,7 @@ from tradingagents.agents.utils.agent_states import (
     RiskDebateState,
 )
 from tradingagents.dataflows.config import set_config
-from tradingagents.validation import check_market_data_freshness, resolve_instrument
+from tradingagents.validation import check_market_data_freshness, check_news_retrieval, resolve_instrument
 
 # Import the new abstract tool methods from agent_utils
 from tradingagents.agents.utils.agent_utils import (
@@ -310,6 +310,7 @@ class TradingAgentsGraph:
             trade_date,
             past_context="",
             historical_lessons_evidence=validated_lessons,
+            vein_context_bundle=self.config.get("vein_context_bundle") or {},
         )
         args = self.propagator.get_graph_args()
 
@@ -368,6 +369,12 @@ class TradingAgentsGraph:
 
         final_state["instrument_resolution"] = instrument_resolution.model_dump(mode="json")
         final_state["market_data_freshness"] = market_data_freshness.model_dump(mode="json")
+        final_state["news_retrieval"] = check_news_retrieval(
+            company_name,
+            trade_date,
+            trade_date,
+            context_bundle=self.config.get("vein_context_bundle") or {},
+        ).model_dump(mode="json")
 
     def _log_state(self, trade_date, final_state):
         """Log the final state to a JSON file."""
@@ -378,6 +385,8 @@ class TradingAgentsGraph:
             "sentiment_report": final_state["sentiment_report"],
             "news_report": final_state["news_report"],
             "fundamentals_report": final_state["fundamentals_report"],
+            "supply_chain_report": final_state.get("supply_chain_report", ""),
+            "vein_context_bundle": final_state.get("vein_context_bundle"),
             "investment_debate_state": {
                 "bull_history": final_state["investment_debate_state"]["bull_history"],
                 "bear_history": final_state["investment_debate_state"]["bear_history"],
@@ -402,6 +411,7 @@ class TradingAgentsGraph:
             "historical_lessons_evidence": final_state.get("historical_lessons_evidence"),
             "instrument_resolution": final_state.get("instrument_resolution"),
             "market_data_freshness": final_state.get("market_data_freshness"),
+            "news_retrieval": final_state.get("news_retrieval"),
             "decision_evidence_bundle": final_state.get("decision_evidence_bundle"),
         }
 

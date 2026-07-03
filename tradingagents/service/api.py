@@ -63,6 +63,7 @@ class CreateReportRequest(BaseModel):
     checkpoint_enabled: bool | None = None
     user_id: str | None = Field(default=None, max_length=128)
     report_tier: ReportTier = ReportTier.pro  # Default to pro for backward compatibility
+    context_bundle: dict[str, Any] | None = None
 
     @field_validator("ticker")
     @classmethod
@@ -217,6 +218,8 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
             f"Date: {analysis_date} | Analysts: {selected_analysts}"
         )
     else:
+        if payload.context_bundle is not None and "supply_chain" not in selected_analysts:
+            selected_analysts.append("supply_chain")
         # Pro tier: full configuration
         logger.info(
             f"Creating PRO TIER job {job_id} | Ticker: {payload.ticker} | "
@@ -236,6 +239,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         max_risk_discuss_rounds=max_risk_discuss_rounds,
         checkpoint_enabled=payload.checkpoint_enabled,
         user_id=payload.user_id,
+        context_bundle=payload.context_bundle,
     )
     try:
         validate_report_request(request)

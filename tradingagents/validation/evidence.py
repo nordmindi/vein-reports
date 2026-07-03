@@ -141,6 +141,7 @@ def _canonical_fact_ids(final_state: dict) -> list[str]:
         "sentiment_report",
         "news_report",
         "fundamentals_report",
+        "supply_chain_report",
         "investment_plan",
         "trader_investment_plan",
         "final_trade_decision",
@@ -148,7 +149,7 @@ def _canonical_fact_ids(final_state: dict) -> list[str]:
         if str(final_state.get(key, "")).strip():
             ids.append(f"report:{key}")
 
-    for key in ("instrument_resolution", "market_data_freshness"):
+    for key in ("instrument_resolution", "market_data_freshness", "news_retrieval", "vein_context_bundle"):
         if final_state.get(key):
             ids.append(f"metadata:{key}")
 

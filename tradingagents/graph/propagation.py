@@ -21,6 +21,7 @@ class Propagator:
         trade_date: str,
         past_context: str = "",
         historical_lessons_evidence: list[dict] | None = None,
+        vein_context_bundle: dict | None = None,
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
         return {
@@ -29,6 +30,7 @@ class Propagator:
             "trade_date": str(trade_date),
             "past_context": past_context,
             "historical_lessons_evidence": historical_lessons_evidence or [],
+            "vein_context_bundle": vein_context_bundle or {},
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",
@@ -57,6 +59,7 @@ class Propagator:
             "fundamentals_report": "",
             "sentiment_report": "",
             "news_report": "",
+            "supply_chain_report": "",
         }
 
     def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:

@@ -18,6 +18,7 @@ ANALYST_REPORT_KEYS = {
     "social": "sentiment_report",
     "news": "news_report",
     "fundamentals": "fundamentals_report",
+    "supply_chain": "supply_chain_report",
 }
 
 SPECIALIST_REPORT_KEYS = set(ANALYST_REPORT_KEYS.values())
@@ -109,6 +110,7 @@ def validate_final_state(
     expected_keys = _expected_report_keys(expected_analysts)
 
     issues.extend(_validate_required_agent_outputs(final_state, expected_keys))
+    issues.extend(_validate_vein_context(final_state))
     issues.extend(_validate_instrument_resolution(final_state))
     issues.extend(_validate_market_data_freshness(final_state))
     issues.extend(_validate_current_price_alignment(final_state))
@@ -540,6 +542,8 @@ def _validation_metadata(final_state: dict) -> dict:
         "technical_validation",
         "dashboard_model",
         "decision_evidence_bundle",
+        "news_retrieval",
+        "vein_context_bundle",
         "historical_lessons_evidence",
         "verified_claims",
         "rejected_claims",
@@ -558,6 +562,39 @@ def _as_dict(value):
     if isinstance(value, (dict, list)):
         return value
     return None
+
+
+def _validate_vein_context(final_state: dict) -> list[ValidationIssue]:
+    context = _as_dict(final_state.get("vein_context_bundle"))
+    if not isinstance(context, dict) or not context:
+        return []
+
+    issues: list[ValidationIssue] = []
+    primary_symbol = context.get("primary_symbol")
+    ticker = final_state.get("company_of_interest")
+    if primary_symbol and ticker and str(primary_symbol).upper() != str(ticker).upper():
+        issues.append(
+            ValidationIssue(
+                code="VEIN_CONTEXT_SYMBOL_MISMATCH",
+                severity="blocking",
+                location="vein_context_bundle.primary_symbol",
+                message="Vein context primary_symbol does not match the analyzed ticker.",
+            )
+        )
+
+    if context.get("has_graph_coverage") is False:
+        report = str(final_state.get("supply_chain_report", ""))
+        if report and "No supply-chain claims are made" not in report:
+            issues.append(
+                ValidationIssue(
+                    code="VEIN_SUPPLY_CHAIN_CLAIM_WITHOUT_COVERAGE",
+                    severity="blocking",
+                    location="supply_chain_report",
+                    message="Supply-chain report must not make structural claims when Vein has no graph coverage.",
+                )
+            )
+
+    return issues
 
 
 def _validate_recommendation_authority(final_state: dict) -> list[ValidationIssue]:
@@ -671,6 +708,7 @@ def _iter_text_fields(final_state: dict) -> list[tuple[str, str]]:
             "sentiment_report",
             "news_report",
             "fundamentals_report",
+            "supply_chain_report",
             "investment_plan",
             "trader_investment_plan",
             "final_trade_decision",

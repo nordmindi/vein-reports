@@ -1,5 +1,10 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from tradingagents.agents.utils.agent_utils import build_instrument_context, get_language_instruction, get_news
+from tradingagents.agents.utils.agent_utils import (
+    build_instrument_context,
+    build_vein_news_context,
+    get_language_instruction,
+    get_news,
+)
 from tradingagents.dataflows.config import get_config
 
 
@@ -7,6 +12,7 @@ def create_social_media_analyst(llm):
     def social_media_analyst_node(state):
         current_date = state["trade_date"]
         instrument_context = build_instrument_context(state["company_of_interest"])
+        vein_news_context = build_vein_news_context(state.get("vein_context_bundle"))
 
         tools = [
             get_news,
@@ -27,7 +33,7 @@ def create_social_media_analyst(llm):
                     " If you are unable to fully answer, that's OK; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
                     " You have access to the following tools: {tool_names}.\n{system_message}"
-                    "For your reference, the current date is {current_date}. {instrument_context}",
+                    "For your reference, the current date is {current_date}. {instrument_context}{vein_news_context}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]
@@ -37,6 +43,7 @@ def create_social_media_analyst(llm):
         prompt = prompt.partial(tool_names=", ".join([tool.name for tool in tools]))
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(instrument_context=instrument_context)
+        prompt = prompt.partial(vein_news_context=vein_news_context)
 
         chain = prompt | llm.bind_tools(tools)
 

@@ -242,6 +242,7 @@ def _iter_claim_fields(final_state: dict) -> list[tuple[str, str]]:
             "sentiment_report",
             "news_report",
             "fundamentals_report",
+            "supply_chain_report",
             "investment_plan",
             "trader_investment_plan",
             "final_trade_decision",

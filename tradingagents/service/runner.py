@@ -23,7 +23,7 @@ from tradingagents.reporting import (
 
 logger = logging.getLogger(__name__)
 
-VALID_ANALYSTS = {"market", "social", "news", "fundamentals"}
+VALID_ANALYSTS = {"market", "social", "news", "fundamentals", "supply_chain"}
 
 
 @dataclass(frozen=True)
@@ -40,6 +40,7 @@ class ReportRequest:
     max_risk_discuss_rounds: int | None = None
     checkpoint_enabled: bool | None = None
     user_id: str | None = None
+    context_bundle: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,8 @@ def validate_report_request(request: ReportRequest) -> None:
     if request.max_risk_discuss_rounds is not None and request.max_risk_discuss_rounds < 1:
         raise ValueError("max_risk_discuss_rounds must be at least 1")
 
+    _validate_context_bundle(request)
+
 
 def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
     # Load environment variables directly to avoid import timing issues
@@ -97,6 +100,7 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
     config["results_dir"] = str(report_root / "_logs" / job_id)
     config["data_cache_dir"] = str(cache_root)
     config["memory_log_path"] = str(memory_root / "trading_memory.md")
+    config["vein_context_bundle"] = request.context_bundle or {}
 
     # Determine the final provider to use
     # Priority: 1. Request parameter, 2. Environment variable, 3. Auto-detection
@@ -206,6 +210,29 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
     )
 
     return config
+
+
+def _validate_context_bundle(request: ReportRequest) -> None:
+    bundle = request.context_bundle
+    if bundle is None:
+        return
+    if not isinstance(bundle, dict):
+        raise ValueError("context_bundle must be an object")
+
+    primary_symbol = bundle.get("primary_symbol")
+    if primary_symbol and str(primary_symbol).strip().upper() != request.ticker.strip().upper():
+        raise ValueError("context_bundle.primary_symbol must match ticker")
+
+    for key in (
+        "anchor_elements",
+        "downstream_products",
+        "related_companies",
+        "chokepoints",
+        "peer_tickers_for_news",
+    ):
+        value = bundle.get(key)
+        if value is not None and not isinstance(value, list):
+            raise ValueError(f"context_bundle.{key} must be a list")
 
 
 def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportResult:

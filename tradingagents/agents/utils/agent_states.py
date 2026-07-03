@@ -56,6 +56,7 @@ class AgentState(MessagesState):
         str, "Report from the News Researcher of current world affairs"
     ]
     fundamentals_report: Annotated[str, "Report from the Fundamentals Researcher"]
+    supply_chain_report: Annotated[str, "Report from the Supply Chain Analyst"]
 
     # researcher team discussion step
     investment_debate_state: Annotated[
@@ -72,3 +73,4 @@ class AgentState(MessagesState):
     final_trade_decision: Annotated[str, "Final decision made by the Risk Analysts"]
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
     historical_lessons_evidence: Annotated[list[dict], "Validated historical lessons allowed for final decision support"]
+    vein_context_bundle: Annotated[dict, "Vein supply-chain context bundle"]

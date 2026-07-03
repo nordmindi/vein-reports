@@ -42,6 +42,45 @@ def build_instrument_context(ticker: str) -> str:
         "preserving any exchange suffix (e.g. `.TO`, `.L`, `.HK`, `.T`)."
     )
 
+
+def build_vein_news_context(context_bundle: dict | None) -> str:
+    if not isinstance(context_bundle, dict) or context_bundle.get("has_graph_coverage") is not True:
+        return ""
+
+    peers = [
+        str(item).strip().upper()
+        for item in (context_bundle.get("peer_tickers_for_news") or [])[:24]
+        if str(item).strip()
+    ]
+    anchors = [
+        str(item.get("name")).strip()
+        for item in context_bundle.get("anchor_elements") or []
+        if isinstance(item, dict) and item.get("name")
+    ]
+    downstream = [
+        str(item.get("name")).strip()
+        for item in context_bundle.get("downstream_products") or []
+        if isinstance(item, dict) and item.get("name")
+    ]
+
+    parts = []
+    if peers:
+        parts.append(
+            "If primary ticker news coverage is thin or empty, you may run supplemental news searches for these Vein supply-chain peer tickers: "
+            + ", ".join(peers)
+            + ". Treat peer results as supply-chain-adjacent context, not direct company news."
+        )
+    terms = anchors + downstream
+    if terms:
+        parts.append(
+            "Relevant Vein supply-chain search terms: "
+            + ", ".join(terms[:12])
+            + ". Do not invent events from these terms."
+        )
+    if not parts:
+        return ""
+    return " Vein context: " + " ".join(parts)
+
 def create_msg_delete():
     def delete_messages(state):
         """Clear messages and add placeholder for Anthropic compatibility"""

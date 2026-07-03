@@ -11,6 +11,7 @@ from .evidence import (
 )
 from .instrument import InstrumentRecord, InstrumentResolution, resolve_instrument
 from .market_data import MarketDataFreshness, check_market_data_freshness
+from .news import NewsRetrievalStatusRecord, check_news_retrieval
 from .report_validator import validate_final_state
 from .models import ValidationIssue, ValidationResult
 from .technical import (
@@ -26,6 +27,7 @@ __all__ = [
     "InstrumentRecord",
     "InstrumentResolution",
     "MarketDataFreshness",
+    "NewsRetrievalStatusRecord",
     "DashboardModel",
     "DecisionEvidenceBundle",
     "DownstreamClaim",
@@ -38,6 +40,7 @@ __all__ = [
     "build_decision_evidence_bundle",
     "bullish_divergence",
     "check_market_data_freshness",
+    "check_news_retrieval",
     "detect_cross",
     "extract_downstream_claims",
     "lesson_is_usable",

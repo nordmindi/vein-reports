@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tradingagents.agents.analysts.supply_chain_analyst import render_supply_chain_report
 from tradingagents.agents.managers.research_manager import create_research_manager
 from tradingagents.agents.schemas import (
     EvidenceBalance,
@@ -21,11 +22,92 @@ from tradingagents.agents.schemas import (
     render_trader_proposal,
 )
 from tradingagents.agents.trader.trader import create_trader
+from tradingagents.agents.utils.agent_utils import build_vein_news_context
 
 
 # ---------------------------------------------------------------------------
 # Render functions
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRenderSupplyChainReport:
+    def test_renders_vein_context_without_trade_guidance(self):
+        report = render_supply_chain_report(
+            "TSLA",
+            {
+                "version": "vein-context-v1",
+                "primary_symbol": "TSLA",
+                "has_graph_coverage": True,
+                "company": {"name": "Tesla, Inc.", "symbol": "TSLA"},
+                "anchor_elements": [{"name": "Electric vehicles"}],
+                "downstream_products": [
+                    {
+                        "name": "EV battery packs",
+                        "category": "energy",
+                        "hops": 1,
+                        "is_chokepoint": True,
+                    }
+                ],
+                "related_companies": [
+                    {
+                        "symbol": "ALB",
+                        "name": "Albemarle Corporation",
+                        "via": "Lithium refining",
+                        "via_chokepoint": True,
+                    }
+                ],
+                "chokepoints": [
+                    {"name": "Lithium refining", "category": None, "hops": 0, "via": "ALB"}
+                ],
+                "peer_tickers_for_news": ["ALB"],
+                "watchlist_notes": "Watch margin and battery supply",
+                "generated_at": "2026-06-30T18:00:00.000Z",
+            },
+        )
+
+        assert "Per Vein Graph structural analysis" in report
+        assert "Electric vehicles" in report
+        assert "EV battery packs" in report
+        assert "ALB" in report
+        assert "user-authored framing" in report
+        assert "**Recommendation**" not in report
+        assert "BUY" not in report
+        assert "SELL" not in report
+
+    def test_no_coverage_does_not_invent_structural_claims(self):
+        report = render_supply_chain_report(
+            "OBSCURE",
+            {
+                "version": "vein-context-v1",
+                "primary_symbol": "OBSCURE",
+                "has_graph_coverage": False,
+                "anchor_elements": [],
+                "downstream_products": [],
+                "related_companies": [],
+                "chokepoints": [],
+                "peer_tickers_for_news": [],
+                "generated_at": "2026-06-30T18:00:00.000Z",
+            },
+        )
+
+        assert "No supply-chain claims are made" in report
+        assert "EV battery packs" not in report
+
+    def test_vein_news_context_lists_peers_as_supplemental(self):
+        context = build_vein_news_context(
+            {
+                "version": "vein-context-v1",
+                "has_graph_coverage": True,
+                "peer_tickers_for_news": ["ALB"],
+                "anchor_elements": [{"name": "Electric vehicles"}],
+                "downstream_products": [{"name": "EV battery packs"}],
+            }
+        )
+
+        assert "ALB" in context
+        assert "supply-chain-adjacent context" in context
+        assert "Do not invent events" in context
 
 
 @pytest.mark.unit

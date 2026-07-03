@@ -23,6 +23,7 @@ from tradingagents.validation import (
     build_decision_evidence_bundle,
     bullish_divergence,
     check_market_data_freshness,
+    check_news_retrieval,
     detect_cross,
     extract_downstream_claims,
     lesson_is_usable,
@@ -140,6 +141,18 @@ class TestReportValidation:
         assert result.blocking_issues[0].code == "FAILED_REQUIRED_AGENT"
         assert result.blocking_issues[0].location == "news_report"
 
+    def test_supply_chain_required_agent_blocks_when_missing(self):
+        result = validate_final_state(
+            _state(supply_chain_report=""),
+            expected_analysts=("market", "supply_chain"),
+        )
+        assert result.status == "blocked"
+        assert any(
+            issue.code == "FAILED_REQUIRED_AGENT"
+            and issue.location == "supply_chain_report"
+            for issue in result.blocking_issues
+        )
+
     def test_specialist_recommendation_blocks(self):
         result = validate_final_state(
             _state(market_report="**Recommendation**: Buy\nTrend is favorable."),
@@ -149,6 +162,52 @@ class TestReportValidation:
         assert [issue.code for issue in result.blocking_issues] == [
             "UNAUTHORIZED_RECOMMENDATION"
         ]
+
+    def test_supply_chain_recommendation_blocks(self):
+        result = validate_final_state(
+            _state(supply_chain_report="**Recommendation**: Buy because chokepoints matter."),
+            expected_analysts=("supply_chain",),
+        )
+        assert result.status == "blocked"
+        assert any(
+            issue.code == "UNAUTHORIZED_RECOMMENDATION"
+            and issue.location == "supply_chain_report"
+            for issue in result.blocking_issues
+        )
+
+    def test_vein_no_coverage_blocks_structural_claims(self):
+        result = validate_final_state(
+            _state(
+                vein_context_bundle={
+                    "version": "vein-context-v1",
+                    "primary_symbol": "NVDA",
+                    "has_graph_coverage": False,
+                },
+                supply_chain_report="Vein shows semiconductor packaging chokepoints.",
+            )
+        )
+        assert result.status == "blocked"
+        assert any(
+            issue.code == "VEIN_SUPPLY_CHAIN_CLAIM_WITHOUT_COVERAGE"
+            for issue in result.blocking_issues
+        )
+
+    def test_vein_primary_symbol_mismatch_blocks(self):
+        result = validate_final_state(
+            _state(
+                vein_context_bundle={
+                    "version": "vein-context-v1",
+                    "primary_symbol": "TSLA",
+                    "has_graph_coverage": True,
+                },
+                supply_chain_report="Per Vein Graph structural analysis for TSLA.",
+            )
+        )
+        assert result.status == "blocked"
+        assert any(
+            issue.code == "VEIN_CONTEXT_SYMBOL_MISMATCH"
+            for issue in result.blocking_issues
+        )
 
     def test_multiple_decision_recommendations_warn_by_default(self):
         result = validate_final_state(
@@ -684,6 +743,19 @@ class TestReportWriterValidation:
         assert json.loads(verified_claims_path.read_text(encoding="utf-8")) == []
         assert json.loads(rejected_claims_path.read_text(encoding="utf-8")) == []
 
+    def test_writes_supply_chain_section_file(self, tmp_path):
+        report_path = write_report_tree(
+            _state(supply_chain_report="### Supply Chain\nPer Vein Graph context."),
+            "NVDA",
+            tmp_path,
+            expected_analysts=("market", "supply_chain"),
+        )
+
+        assert report_path.exists()
+        supply_path = tmp_path / "1_analysts" / "supply_chain.md"
+        assert supply_path.exists()
+        assert "Per Vein Graph context" in supply_path.read_text(encoding="utf-8")
+
     def test_research_only_report_suppresses_directional_pm_decision(self, tmp_path):
         state = _state(
             final_trade_decision=(
@@ -836,6 +908,68 @@ class TestMarketDataFreshness:
             result = check_market_data_freshness("NVDA", "2026-06-26", max_completed_sessions_old=2)
         assert result.freshness_status == "blocked"
         assert result.recommendation_allowed is False
+
+
+@pytest.mark.unit
+class TestNewsRetrieval:
+    def test_vendor_news_success(self):
+        mock_ticker = MagicMock()
+        mock_ticker.get_news.return_value = [
+            {
+                "content": {
+                    "title": "Company update",
+                    "provider": {"displayName": "Wire"},
+                    "pubDate": "2026-06-29T12:00:00Z",
+                    "canonicalUrl": {"url": "https://example.com/news"},
+                }
+            }
+        ]
+        with patch("yfinance.Ticker", return_value=mock_ticker):
+            result = check_news_retrieval("TSLA", "2026-06-29", "2026-06-30")
+
+        assert result.status == "NEWS_VENDOR_SUCCESS"
+        assert result.vendor_results_count == 1
+        assert result.fallback_attempted is False
+
+    def test_vendor_empty_uses_vein_peer_news(self):
+        primary = MagicMock()
+        primary.get_news.return_value = []
+        peer = MagicMock()
+        peer.get_news.return_value = [
+            {
+                "content": {
+                    "title": "Lithium refining update",
+                    "provider": {"displayName": "Wire"},
+                    "pubDate": "2026-06-29T12:00:00Z",
+                    "canonicalUrl": {"url": "https://example.com/peer-news"},
+                }
+            }
+        ]
+
+        def ticker_factory(symbol):
+            return peer if symbol == "ALB" else primary
+
+        with patch("yfinance.Ticker", side_effect=ticker_factory):
+            result = check_news_retrieval(
+                "TSLA",
+                "2026-06-29",
+                "2026-06-30",
+                context_bundle={
+                    "version": "vein-context-v1",
+                    "primary_symbol": "TSLA",
+                    "has_graph_coverage": True,
+                    "peer_tickers_for_news": ["ALB"],
+                },
+            )
+
+        assert result.status == "PEER_NEWS_FALLBACK_USED"
+        assert result.peer_fallback_attempted is True
+        assert result.peer_tickers_queried == ["ALB"]
+        assert result.peer_results_count == 1
+        assert result.results[0]["source_type"] == "vein_peer_news"
+        assert result.results[0]["peer_ticker"] == "ALB"
+        assert result.results[0]["supplemental_for"] == "primary_ticker_news_vacuum"
+        assert result.fallback_attempted is False
 
 
 @pytest.mark.unit
