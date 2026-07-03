@@ -5,6 +5,7 @@ import logging
 import os
 import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -119,6 +120,97 @@ executor = ThreadPoolExecutor(max_workers=int(os.getenv("TRADINGAGENTS_SERVICE_W
 jobs: dict[str, JobRecord] = {}
 
 
+def _reports_root() -> Path:
+    return Path(os.getenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", "reports/api")).resolve()
+
+
+def _job_store_dir() -> Path:
+    return _reports_root() / "_jobs"
+
+
+def _job_store_path(job_id: str) -> Path:
+    return _job_store_dir() / f"{job_id}.json"
+
+
+def _write_job_record(record: JobRecord) -> None:
+    _job_store_dir().mkdir(parents=True, exist_ok=True)
+    payload: dict[str, Any] = {
+        "job_id": record.job_id,
+        "status": record.status.value,
+        "request": asdict(record.request),
+        "error": record.error,
+        "created_at": _dt_or_none(record.created_at),
+        "started_at": _dt_or_none(record.started_at),
+        "completed_at": _dt_or_none(record.completed_at),
+        "result": _result_payload(record.result),
+    }
+    path = _job_store_path(record.job_id)
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _load_job_record(job_id: str) -> JobRecord | None:
+    path = _job_store_path(job_id)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        request = ReportRequest(**payload["request"])
+        record = JobRecord(job_id=payload["job_id"], request=request)
+        record.status = JobStatus(payload["status"])
+        record.error = payload.get("error")
+        record.created_at = _parse_dt(payload.get("created_at")) or datetime.now()
+        record.started_at = _parse_dt(payload.get("started_at"))
+        record.completed_at = _parse_dt(payload.get("completed_at"))
+        record.result = _load_result(payload.get("result"))
+        return record
+    except Exception as exc:
+        logger.error("Failed to load job metadata for %s: %s", job_id, exc, exc_info=True)
+        return None
+
+
+def _result_payload(result: ReportResult | None) -> dict[str, Any] | None:
+    if result is None:
+        return None
+    return {
+        "job_id": result.job_id,
+        "ticker": result.ticker,
+        "analysis_date": result.analysis_date,
+        "decision": result.decision,
+        "report_dir": str(result.report_dir),
+        "markdown_path": str(result.markdown_path),
+        "pdf_path": str(result.pdf_path),
+    }
+
+
+def _load_result(payload: dict[str, Any] | None) -> ReportResult | None:
+    if not payload:
+        return None
+    return ReportResult(
+        job_id=payload["job_id"],
+        ticker=payload["ticker"],
+        analysis_date=payload["analysis_date"],
+        decision=payload.get("decision"),
+        report_dir=Path(payload["report_dir"]),
+        markdown_path=Path(payload["markdown_path"]),
+        pdf_path=Path(payload["pdf_path"]),
+    )
+
+
+def _dt_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _parse_dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def require_service_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = os.getenv("TRADINGAGENTS_SERVICE_API_KEY")
     if expected and x_api_key != expected:
@@ -132,6 +224,7 @@ def require_service_key(x_api_key: str | None = Header(default=None)) -> None:
 def _execute_job(record: JobRecord) -> ReportResult:
     record.status = JobStatus.running
     record.started_at = datetime.now()
+    _write_job_record(record)
     
     logger.info(
         f"Job {record.job_id} started | Ticker: {record.request.ticker} | "
@@ -143,6 +236,7 @@ def _execute_job(record: JobRecord) -> ReportResult:
         record.result = run_report_job(record.request, job_id=record.job_id)
         record.status = JobStatus.completed
         record.completed_at = datetime.now()
+        _write_job_record(record)
         duration = (record.completed_at - record.started_at).total_seconds()
         
         logger.info(
@@ -175,13 +269,16 @@ def _execute_job(record: JobRecord) -> ReportResult:
                 f"Error: {record.error}",
                 exc_info=True,
             )
+        _write_job_record(record)
         raise
 
 
 def _get_job(job_id: str) -> JobRecord:
     record = jobs.get(job_id)
     if record is None:
-        logger.warning(f"Job {job_id} not found")
+        record = _load_job_record(job_id)
+    if record is None:
+        logger.warning(f"Job {job_id} not found in memory or persisted job store")
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return record
 
@@ -252,6 +349,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
 
     record = JobRecord(job_id, request)
     jobs[job_id] = record
+    _write_job_record(record)
     record.future = executor.submit(_execute_job, record)
     
     logger.info(f"Job {job_id} queued successfully")
