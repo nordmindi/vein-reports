@@ -37,6 +37,9 @@ def _headers() -> dict[str, str]:
     if key:
         headers["X-API-Key"] = key
         headers["Authorization"] = f"Bearer {key}"
+    dashboard_token = os.getenv("TRADINGAGENTS_GOLDEN_TREND_DASHBOARD_TOKEN", "").strip()
+    if dashboard_token:
+        headers["x-dashboard-action-token"] = dashboard_token
     return headers
 
 
