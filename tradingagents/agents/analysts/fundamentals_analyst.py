@@ -1,20 +1,19 @@
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
 from tradingagents.agents.utils.agent_utils import (
-    build_instrument_context,
     get_balance_sheet,
     get_cashflow,
     get_fundamentals,
     get_income_statement,
-    get_insider_transactions,
+    get_instrument_context_from_state,
     get_language_instruction,
 )
-from tradingagents.dataflows.config import get_config
 
 
 def create_fundamentals_analyst(llm):
     def fundamentals_analyst_node(state):
         current_date = state["trade_date"]
-        instrument_context = build_instrument_context(state["company_of_interest"])
+        instrument_context = get_instrument_context_from_state(state)
 
         tools = [
             get_fundamentals,
@@ -24,10 +23,10 @@ def create_fundamentals_analyst(llm):
         ]
 
         system_message = (
-            "You are a fundamentals researcher. Use the most recent available financial statements and compare them with the corresponding prior-year period when the data is available; additionally identify material filings, guidance changes, or company updates during the requested news window. Maximize factual accuracy and traceability. Prefer a short and incomplete report that is fully supported over a comprehensive report containing unsupported claims. Preserve periods, currencies, units, and accounting basis. Report missing or conflicting evidence instead of filling gaps. Do not issue BUY, HOLD, or SELL."
-            + " Append a concise Markdown table at the end of the report to organize supported key points."
+            "You are a researcher tasked with analyzing fundamental information over the past week about a company. Please write a comprehensive report of the company's fundamental information such as financial documents, company profile, basic company financials, and company financial history to gain a full view of the company's fundamental information to inform traders. Make sure to include as much detail as possible. Provide specific, actionable insights with supporting evidence to help traders make informed decisions."
+            + " Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."
             + " Use the available tools: `get_fundamentals` for comprehensive company analysis, `get_balance_sheet`, `get_cashflow`, and `get_income_statement` for specific financial statements."
-            + get_language_instruction()
+            + get_language_instruction(),
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -38,8 +37,11 @@ def create_fundamentals_analyst(llm):
                     " Use the provided tools to progress towards answering the question."
                     " If you are unable to fully answer, that's OK; another assistant with different tools"
                     " will help where you left off. Execute what you can to make progress."
-                    " You have access to the following tools: {tool_names}.\n{system_message}"
-                    "For your reference, the current date is {current_date}. {instrument_context}",
+                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
+                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
+                    " You have access to the following tools: {tool_names}."
+                    " Today's date is {current_date}; treat it as 'now' for all analysis and tool-call date ranges. {instrument_context}\n"
+                    "{system_message}",
                 ),
                 MessagesPlaceholder(variable_name="messages"),
             ]

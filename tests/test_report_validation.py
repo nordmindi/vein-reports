@@ -5,11 +5,10 @@ import pandas as pd
 import pytest
 
 from tradingagents.agents.schemas import (
-    EvidenceBalance,
-    ExecutionBias,
     PortfolioDecision,
     PortfolioRating,
     ResearchPlan,
+    TraderAction,
     TraderProposal,
     render_pm_decision,
     render_research_plan,
@@ -250,24 +249,15 @@ class TestReportValidation:
         )
 
     def test_strict_mode_passes_rendered_non_authoritative_handoffs(self):
-        investment_plan = render_research_plan(
-            ResearchPlan(
-                evidence_balance=EvidenceBalance.BALANCED,
-                bull_case_summary="Supported positives are present.",
-                bear_case_summary="Material risks remain.",
-                uncertainties=["Fresh guidance is not available."],
-                decision_permitted=True,
-                trader_context="Neutral execution context for later review.",
-            )
+        investment_plan = (
+            "**Evidence Balance**: Balanced\n\n"
+            "**Bull Case Summary**: Supported positives are present.\n\n"
+            "**Bear Case Summary**: Material risks remain.\n\n"
+            "**Trader Context**: Neutral execution context for later review."
         )
-        trader_context = render_trader_proposal(
-            TraderProposal(
-                execution_bias=ExecutionBias.NEUTRAL,
-                reasoning="Execution context remains balanced.",
-                entry_context="Wait for cleaner evidence before acting.",
-                risk_context="Event risk remains unresolved.",
-                sizing_context="Sizing should be deferred to final review.",
-            )
+        trader_context = (
+            "**Execution Bias**: Neutral\n\n"
+            "**Reasoning**: Execution context remains balanced."
         )
         final_decision = render_pm_decision(
             PortfolioDecision(

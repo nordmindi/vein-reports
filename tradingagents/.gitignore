@@ -1,0 +1,6 @@
+# Local virtualenv accidentally created inside the package directory.
+Lib/
+Scripts/
+Include/
+share/
+pyvenv.cfg

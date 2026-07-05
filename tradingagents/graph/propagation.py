@@ -1,8 +1,8 @@
 # TradingAgents/graph/propagation.py
 
-from typing import Dict, Any, List, Optional
+from typing import Any
+
 from tradingagents.agents.utils.agent_states import (
-    AgentState,
     InvestDebateState,
     RiskDebateState,
 )
@@ -19,14 +19,18 @@ class Propagator:
         self,
         company_name: str,
         trade_date: str,
+        asset_type: str = "stock",
         past_context: str = "",
         historical_lessons_evidence: list[dict] | None = None,
+        instrument_context: str = "",
         vein_context_bundle: dict | None = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Create the initial state for the agent graph."""
         return {
             "messages": [("human", company_name)],
             "company_of_interest": company_name,
+            "asset_type": asset_type,
+            "instrument_context": instrument_context,
             "trade_date": str(trade_date),
             "past_context": past_context,
             "historical_lessons_evidence": historical_lessons_evidence or [],
@@ -62,13 +66,8 @@ class Propagator:
             "supply_chain_report": "",
         }
 
-    def get_graph_args(self, callbacks: Optional[List] = None) -> Dict[str, Any]:
-        """Get arguments for the graph invocation.
-
-        Args:
-            callbacks: Optional list of callback handlers for tool execution tracking.
-                       Note: LLM callbacks are handled separately via LLM constructor.
-        """
+    def get_graph_args(self, callbacks: list | None = None) -> dict[str, Any]:
+        """Get arguments for the graph invocation."""
         config = {"recursion_limit": self.max_recur_limit}
         if callbacks:
             config["callbacks"] = callbacks
