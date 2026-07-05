@@ -127,7 +127,7 @@ class VeinReportPDF(FPDF):
         self.set_font("helvetica", "", 7.5)
         self.set_text_color(*self.colors["muted"])
         self.cell(self.content_width / 2, 9, f"Generated {datetime.now().strftime('%Y-%m-%d')}", align="L")
-        self.cell(self.content_width / 2, 9, "TradingAgents report package", align="R")
+        self.cell(self.content_width / 2, 9, "Vein Reports report package", align="R")
 
     def add_title_page(self, ticker, date_str):
         self.add_page()
@@ -151,7 +151,7 @@ class VeinReportPDF(FPDF):
         self.set_font("helvetica", "", 10)
         self.set_text_color(*self.colors["muted"])
         self.cell(self.content_width, 7, f"Analysis date: {date_str}", ln=True, align="C")
-        self.cell(self.content_width, 7, "Compiled by TradingAgents", ln=True, align="C")
+        self.cell(self.content_width, 7, "Compiled by Vein Reports", ln=True, align="C")
 
     def clean_text(self, text):
         if not isinstance(text, str):

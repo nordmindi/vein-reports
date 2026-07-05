@@ -25,7 +25,7 @@ def main():
     port = int(os.getenv("PORT", os.getenv("SERVICE_PORT", "8000")))
     workers = int(os.getenv("WORKERS", os.getenv("TRADINGAGENTS_SERVICE_WORKERS", "1")))
 
-    print(f"Starting TradingAgents service on {host}:{port}")
+    print(f"Starting Vein Reports service on {host}:{port}")
     print(f"Workers: {workers}")
 
     # Run the FastAPI application

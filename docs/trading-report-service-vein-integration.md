@@ -423,7 +423,7 @@ Vein Explorer now attaches a **`context_bundle`** (`vein-context-v1`) to every `
 
 **Full spec (schema, examples, recommended behaviour):**  
 `docs/trading-report-service-vein-integration.md` in the Vein repo  
-(or share the file directly from `https://github.com/nordmindi/supply-chain-explorer/blob/main/docs/trading-report-service-vein-integration.md`)
+(or share the file directly from `https://github.com/nordmindi/vein-explorer/blob/main/docs/trading-report-service-vein-integration.md`)
 
 **What we need on your side:**
 

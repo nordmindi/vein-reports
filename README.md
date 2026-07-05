@@ -111,8 +111,8 @@ Our framework decomposes complex trading tasks into specialized roles.
 
 Clone TradingAgents:
 ```bash
-git clone https://github.com/nordmindi/TradingAgents.git
-cd TradingAgents
+git clone https://github.com/nordmindi/vein-reports.git
+cd vein-reports
 ```
 
 Create a virtual environment in any of your favorite environment managers:

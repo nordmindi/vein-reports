@@ -1,4 +1,4 @@
-"""Markdown and artifact writers for Golden Trend signal validation in reports."""
+"""Markdown and artifact writers for Vein Signals validation in reports."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ def render_signal_validation_markdown(signal: dict[str, Any]) -> str:
         return ""
 
     lines = [
-        "## Signal Service Validation (Vein Signals / Golden Trend)",
+        "## Vein Signals Validation",
         "",
         f"- **Raw signal:** {signal.get('rawSignal', 'NO_SIGNAL')}",
-        f"- **Signal service final:** {signal.get('signalServiceFinal', signal.get('finalSignal', 'NO_SIGNAL'))}",
+        f"- **Vein Signals final:** {signal.get('signalServiceFinal', signal.get('finalSignal', 'NO_SIGNAL'))}",
         f"- **Combined decision:** {signal.get('finalSignal', 'NO_SIGNAL')}",
         f"- **Trade allowed:** {signal.get('tradeAllowed', False)}",
         f"- **Confidence:** {signal.get('confidenceScore', 0)} / {signal.get('confidenceGrade', 'F')}",
@@ -44,7 +44,7 @@ def render_signal_validation_markdown(signal: dict[str, Any]) -> str:
         lines.extend(
             [
                 "**Report impact:**",
-                "This report must not present an active trade candidate while the signal service "
+                "This report must not present an active trade candidate while Vein Signals "
                 "blocks execution or keeps the setup on the watchlist only.",
                 "",
             ]

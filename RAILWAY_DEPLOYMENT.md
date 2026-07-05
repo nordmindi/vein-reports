@@ -13,7 +13,7 @@ This guide explains how to deploy the TradingAgents service on Railway.com.
 ### 1. Fork the Repository
 
 First, fork this repository to your GitHub account:
-1. Go to https://github.com/nordmindi/TradingAgents
+1. Go to https://github.com/nordmindi/vein-reports
 2. Click the "Fork" button
 3. Follow the prompts to create your fork
 

@@ -230,7 +230,7 @@ class CreateReportRequest(BaseModel):
     )
     strategy_id: str | None = Field(
         default=None,
-        description="Optional Golden Trend / Vein Signals strategy profile for signal validation.",
+        description="Optional Vein Signals strategy profile for signal validation.",
         examples=["golden-trend-balanced"],
     )
 
@@ -301,9 +301,9 @@ class JobRecord:
 
 
 app = FastAPI(
-    title="TradingAgents Service API",
+    title="Vein Reports Service API",
     version="0.1.0",
-    description="Run TradingAgents analysis jobs and download generated PDF reports.",
+    description="Run Vein Reports analysis jobs and download generated PDF reports.",
 )
 
 executor = ThreadPoolExecutor(max_workers=int(os.getenv("TRADINGAGENTS_SERVICE_WORKERS", "1")))

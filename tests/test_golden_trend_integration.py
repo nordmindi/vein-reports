@@ -1,4 +1,4 @@
-"""Tests for Golden Trend signal client normalization."""
+"""Tests for Vein Signals signal client normalization."""
 
 from __future__ import annotations
 

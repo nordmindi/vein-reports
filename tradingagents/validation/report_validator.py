@@ -611,7 +611,7 @@ def _validate_golden_trend_signal(final_state: dict) -> list[ValidationIssue]:
             severity="blocking",
             location="golden_trend_signal.finalSignal",
             message=(
-                "Vein Signals / Golden Trend blocked execution "
+                "Vein Signals blocked execution "
                 f"({signal.get('finalSignal', 'WATCHLIST_ONLY')}); "
                 "the report cannot publish an actionable trade recommendation."
             ),

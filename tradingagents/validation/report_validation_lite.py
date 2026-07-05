@@ -1,4 +1,4 @@
-"""Deterministic report-validation-lite for Golden Trend (no LLM, no full report)."""
+"""Deterministic report-validation-lite for Vein Signals (no LLM, no full report)."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def validate_report_lite(payload: dict[str, Any]) -> dict[str, Any]:
             warnings=warnings,
             supporting=supporting,
             contradicting=contradicting,
-            summary="Report validation blocked because signal-service hard blockers remain unresolved.",
+            summary="Report validation blocked because Vein Signals hard blockers remain unresolved.",
         )
 
     if final_signal == "WATCHLIST_ONLY" or not trade_allowed:
@@ -51,10 +51,10 @@ def validate_report_lite(payload: dict[str, Any]) -> dict[str, Any]:
             directional_bias="MIXED",
             confidence=0.35,
             hard_blocks=blockers or flags[:8],
-            warnings=warnings or ["Signal service returned watchlist-only posture."],
+            warnings=warnings or ["Vein Signals returned watchlist-only posture."],
             supporting=supporting,
             contradicting=contradicting,
-            summary="Setup remains watchlist-only; report context cannot upgrade this to a trade candidate.",
+            summary="Setup remains watchlist-only; Vein Reports cannot upgrade this to a trade candidate.",
         )
 
     if confidence < 65:
@@ -66,10 +66,10 @@ def validate_report_lite(payload: dict[str, Any]) -> dict[str, Any]:
             directional_bias="MIXED",
             confidence=0.45,
             hard_blocks=[],
-            warnings=warnings + ["Signal confidence below reduced-size threshold."],
+            warnings=warnings + ["Vein Signals confidence below reduced-size threshold."],
             supporting=supporting,
             contradicting=contradicting,
-            summary="Signal is directionally active but confidence is too low for report approval.",
+            summary="Signal is directionally active but Vein Signals confidence is too low for report approval.",
         )
 
     directional_bias = _directional_bias(raw_signal)
@@ -82,9 +82,9 @@ def validate_report_lite(payload: dict[str, Any]) -> dict[str, Any]:
         confidence=min(0.85, 0.55 + confidence / 200),
         hard_blocks=[],
         warnings=warnings,
-        supporting=supporting or ["Signal-service gates passed minimum execution thresholds."],
+        supporting=supporting or ["Vein Signals gates passed minimum execution thresholds."],
         contradicting=contradicting,
-        summary="Report validation does not contradict the signal-service setup.",
+        summary="Vein Reports validation does not contradict the Vein Signals setup.",
     )
 
 

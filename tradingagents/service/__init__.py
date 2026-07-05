@@ -1,1 +1,1 @@
-"""Service API support for running TradingAgents as a backend worker."""
+"""Service API support for running Vein Reports as a backend worker."""

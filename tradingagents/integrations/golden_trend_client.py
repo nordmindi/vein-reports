@@ -1,4 +1,4 @@
-"""HTTP client for Golden Trend / Vein Signals analyze API (no hard dependency)."""
+"""HTTP client for Vein Signals analyze API (no hard dependency)."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ def analyze_symbol(
         response.raise_for_status()
         body = response.json()
     except (requests.RequestException, ValueError) as exc:
-        logger.warning("Golden Trend analyze failed for %s: %s", symbol, exc)
+        logger.warning("Vein Signals analyze failed for %s: %s", symbol, exc)
         return None
 
     if not isinstance(body, dict):
