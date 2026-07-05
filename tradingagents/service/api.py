@@ -228,6 +228,11 @@ class CreateReportRequest(BaseModel):
             "adds the supply_chain analyst if it was not selected."
         ),
     )
+    strategy_id: str | None = Field(
+        default=None,
+        description="Optional Golden Trend / Vein Signals strategy profile for signal validation.",
+        examples=["golden-trend-balanced"],
+    )
 
     @field_validator("ticker")
     @classmethod
@@ -249,6 +254,21 @@ class CreateReportResponse(BaseModel):
     dashboard_url: str
     validation_url: str
     evidence_url: str
+
+
+class ReportValidationLiteRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    symbol: str = Field(..., min_length=1, max_length=32)
+    strategy: str | None = None
+    rawSignal: str | None = None
+    finalSignal: str | None = None
+    tradeAllowed: bool | None = None
+    confidenceScore: int | None = None
+    confidenceGrade: str | None = None
+    topBlockers: list[str] = Field(default_factory=list)
+    watchlistConditions: list[Any] = Field(default_factory=list)
+    supplyChainContext: dict[str, Any] | None = None
 
 
 class ReportJobResponse(BaseModel):
@@ -553,6 +573,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         checkpoint_enabled=payload.checkpoint_enabled,
         user_id=payload.user_id,
         context_bundle=context_bundle,
+        strategy_id=payload.strategy_id,
     )
     try:
         validate_report_request(request)
@@ -708,4 +729,17 @@ def download_report_pdf(job_id: str) -> FileResponse:
         media_type="application/pdf",
         filename=pdf_path.name,
     )
+
+
+@app.post(
+    "/v1/report-validation-lite",
+    dependencies=[Depends(require_service_key)],
+    summary="Lightweight signal/report fusion validation for Vein Signals",
+)
+def report_validation_lite(payload: ReportValidationLiteRequest) -> dict[str, Any]:
+    from tradingagents.validation.report_validation_lite import validate_report_lite
+
+    body = payload.model_dump(exclude_none=True)
+    body["symbol"] = payload.symbol.strip().upper()
+    return validate_report_lite(body)
 

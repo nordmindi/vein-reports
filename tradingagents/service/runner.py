@@ -41,6 +41,7 @@ class ReportRequest:
     checkpoint_enabled: bool | None = None
     user_id: str | None = None
     context_bundle: dict[str, Any] | None = None
+    strategy_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -242,8 +243,26 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
     job_id = job_id or uuid4().hex
     ticker = request.ticker.strip().upper()
 
+    context_bundle = request.context_bundle
+    if context_bundle is None:
+        from tradingagents.integrations.vein_explorer_client import (
+            fetch_supply_chain_context,
+            is_vein_pull_enabled,
+        )
+
+        if is_vein_pull_enabled():
+            context_bundle = fetch_supply_chain_context(ticker)
+
+    golden_trend_signal = None
+    from tradingagents.integrations.golden_trend_client import fetch_signal_validation
+
+    golden_trend_signal = fetch_signal_validation(ticker, strategy_id=request.strategy_id)
+
     logger.info(f"Building config | Job: {job_id} | Ticker: {ticker}")
     config = build_config(request, job_id)
+    if context_bundle:
+        config["vein_context_bundle"] = context_bundle
+    config["golden_trend_signal"] = golden_trend_signal or {}
 
     logger.info(f"Initializing TradingAgentsGraph | Job: {job_id} | Analysts: {request.selected_analysts}")
     graph = TradingAgentsGraph(
@@ -268,6 +287,11 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         else:
             logger.error(f"Propagation failed | Job: {job_id} | Error: {error_msg}", exc_info=True)
             raise
+
+    if golden_trend_signal:
+        final_state["golden_trend_signal"] = golden_trend_signal
+    if config.get("vein_context_bundle"):
+        final_state["vein_context_bundle"] = config.get("vein_context_bundle") or {}
 
     report_root = Path(os.getenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", "reports/api")).resolve()
     report_dir = report_root / job_id

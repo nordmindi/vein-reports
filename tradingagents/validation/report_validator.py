@@ -110,6 +110,7 @@ def validate_final_state(
 
     issues.extend(_validate_required_agent_outputs(final_state, expected_keys))
     issues.extend(_validate_vein_context(final_state))
+    issues.extend(_validate_golden_trend_signal(final_state))
     issues.extend(_validate_instrument_resolution(final_state))
     issues.extend(_validate_market_data_freshness(final_state))
     issues.extend(_validate_current_price_alignment(final_state))
@@ -594,6 +595,28 @@ def _validate_vein_context(final_state: dict) -> list[ValidationIssue]:
             )
 
     return issues
+
+
+def _validate_golden_trend_signal(final_state: dict) -> list[ValidationIssue]:
+    signal = _as_dict(final_state.get("golden_trend_signal"))
+    if not isinstance(signal, dict) or not signal:
+        return []
+
+    if not signal.get("blocksTradePublication"):
+        return []
+
+    return [
+        ValidationIssue(
+            code="SIGNAL_SERVICE_BLOCKS_TRADE",
+            severity="blocking",
+            location="golden_trend_signal.finalSignal",
+            message=(
+                "Vein Signals / Golden Trend blocked execution "
+                f"({signal.get('finalSignal', 'WATCHLIST_ONLY')}); "
+                "the report cannot publish an actionable trade recommendation."
+            ),
+        )
+    ]
 
 
 def _validate_recommendation_authority(final_state: dict) -> list[ValidationIssue]:

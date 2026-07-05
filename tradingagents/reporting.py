@@ -108,6 +108,18 @@ def write_report_tree(
 
     sections = []
 
+    signal = final_state.get("golden_trend_signal")
+    if isinstance(signal, dict) and signal:
+        from tradingagents.integrations.signal_validation_section import (
+            render_signal_validation_markdown,
+            write_signal_validation_artifacts,
+        )
+
+        write_signal_validation_artifacts(save_path, signal)
+        rendered = render_signal_validation_markdown(signal)
+        if rendered.strip():
+            sections.append(rendered)
+
     # 1. Analysts
     analysts_dir = save_path / "1_analysts"
     analyst_parts = []

@@ -69,6 +69,26 @@ class TestServiceApiContract:
         assert "/v1/reports/{job_id}/dashboard" in schema["paths"]
         assert "/v1/reports/{job_id}/validation" in schema["paths"]
         assert "/v1/reports/{job_id}/evidence" in schema["paths"]
+        assert "/v1/report-validation-lite" in schema["paths"]
+
+    def test_report_validation_lite_endpoint(self, monkeypatch):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_API_KEY", "test-key")
+        client = TestClient(api.app)
+        response = client.post(
+            "/v1/report-validation-lite",
+            headers={"X-API-Key": "test-key"},
+            json={
+                "symbol": "FCX",
+                "rawSignal": "ENTER_SHORT",
+                "finalSignal": "WATCHLIST_ONLY",
+                "tradeAllowed": False,
+                "confidenceScore": 16,
+                "topBlockers": ["PROPOSAL_GATE_FAILED"],
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["reportValidation"]["recommendation"] == "INSUFFICIENT_EVIDENCE"
 
     def test_context_bundle_auto_adds_supply_chain_for_pro_jobs(self, monkeypatch):
         monkeypatch.setattr(api, "run_report_job", lambda request, job_id: None)
