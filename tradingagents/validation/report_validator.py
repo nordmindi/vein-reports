@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import re
 from collections import Counter
-from typing import Iterable
+from collections.abc import Iterable
 
 from tradingagents.agents.utils.rating import parse_rating
 
-from .models import ValidationIssue, ValidationResult
-from .dashboard import validate_dashboard_consistency
 from .claims import rejected_claims
+from .dashboard import validate_dashboard_consistency
 from .evidence import usable_historical_lessons
+from .models import ValidationIssue, ValidationResult
 from .technical import validate_technical_claims
-
 
 ANALYST_REPORT_KEYS = {
     "market": "market_report",

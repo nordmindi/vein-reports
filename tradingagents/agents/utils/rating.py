@@ -19,7 +19,7 @@ RATINGS_5_TIER: tuple[str, ...] = (
     "Buy", "Overweight", "Hold", "Underweight", "Sell",
 )
 SAFE_RATING = "Insufficient Evidence"
-RATINGS: Tuple[str, ...] = RATINGS_5_TIER + (SAFE_RATING,)
+RATINGS: tuple[str, ...] = RATINGS_5_TIER + (SAFE_RATING,)
 
 _RATING_CANONICAL = {r.lower(): r for r in RATINGS}
 _RATING_CANONICAL["insufficient_evidence"] = SAFE_RATING

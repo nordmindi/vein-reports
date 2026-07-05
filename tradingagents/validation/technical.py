@@ -8,7 +8,6 @@ from typing import Any, Literal
 
 from .models import ValidationIssue
 
-
 CrossEvent = Literal["golden_cross", "death_cross", "no_new_cross"]
 
 
@@ -300,9 +299,7 @@ def _validated_event(validation: dict | None, expected_event: str) -> bool:
         return False
     if validation.get("validated") is not True:
         return False
-    if validation.get("event") not in (None, expected_event):
-        return False
-    return True
+    return validation.get("event") in (None, expected_event)
 
 
 def _cross_matches(cross: dict, event: str) -> bool:

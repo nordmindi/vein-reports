@@ -5,22 +5,22 @@ Test script to verify that PDF generation works with the updated asset handling.
 
 import os
 import sys
-from pathlib import Path
 
 # Add the scripts directory to the path so we can import the PDF generator
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
 
 from generate_full_report_pdf import VeinReportPDF
 
+
 def test_pdf_asset_handling():
     """Test that the PDF generator can properly handle asset paths."""
     print("Testing PDF asset handling...")
-    
+
     # Create an instance of the PDF generator
     pdf = VeinReportPDF()
-    
+
     print(f"Logo path set to: {pdf.logo_path}")
-    
+
     # Check if the logo path exists
     if pdf.logo_path:
         exists = os.path.exists(pdf.logo_path)

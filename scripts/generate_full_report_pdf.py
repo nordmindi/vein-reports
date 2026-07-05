@@ -7,7 +7,6 @@ from pathlib import Path
 from fpdf import FPDF
 from fpdf.enums import MethodReturnValue
 
-
 DISPLAY_REPLACEMENTS = {
     "INSUFFICIENT_EVIDENCE": "Insufficient Evidence",
     "NO_CURRENT_TRANSACTION": "No current transaction",
@@ -101,13 +100,13 @@ class VeinReportPDF(FPDF):
             os.path.join(sys.prefix, "assets", "vein-logo-text.webp"),
             os.path.join(getattr(sys, '_MEIPASS', ''), "assets", "vein-logo-text.webp"),
         ]
-        
+
         self.logo_path = None
         for path in possible_paths:
             if os.path.exists(path):
                 self.logo_path = path
                 break
-        
+
         # If still not found, try to find it relative to the package
         if self.logo_path is None:
             # Try to find the package root
@@ -390,28 +389,28 @@ class MarkdownPDFGenerator:
         min_widths = []
         max_widths = []
         content_widths = []
-        
+
         for col_idx in range(col_count):
             header = rows[0][col_idx]
             cells = [row[col_idx] for row in body_rows]
             all_cells = [header] + cells
 
             self.pdf.set_font("helvetica", "B", 8.0)
-            header_width = self.pdf.get_string_width(header) + padding
+            self.pdf.get_string_width(header) + padding
             self.pdf.set_font("helvetica", "", 8.0)
-            
+
             # Calculate max width needed for any cell in this column
             max_cell_width = max([self.pdf.get_string_width(cell) for cell in all_cells] or [0]) + padding
-            
+
             # Calculate average content length for this column
-            avg_content_length = sum(len(str(cell)) for cell in all_cells) / max(1, len(all_cells))
-            
+            sum(len(str(cell)) for cell in all_cells) / max(1, len(all_cells))
+
             # Set minimum width based on content
             min_width = max(12, min(20, max_cell_width * 0.3))  # Minimum 12pt, max 20pt, scaled to content
-            
+
             # Set maximum width based on content
             max_width = min(total_width * 0.6, max(30, max_cell_width))  # Max 60% of total width or max cell width, minimum 30pt
-            
+
             min_widths.append(min_width)
             max_widths.append(max_width)
             content_widths.append(max_cell_width)
@@ -424,19 +423,19 @@ class MarkdownPDFGenerator:
                 max(min_widths[i], min(max_widths[i], (content_widths[i] / total_content_width) * total_width * 0.9))
                 for i in range(col_count)
             ]
-            
+
             # Adjust to fit exactly within total_width
             current_total = sum(proportional_widths)
             if current_total > 0:
                 scale_factor = total_width / current_total
                 scaled_widths = [width * scale_factor for width in proportional_widths]
-                
+
                 # Ensure widths stay within min/max bounds
                 final_widths = []
                 for i in range(col_count):
                     width = max(min_widths[i], min(max_widths[i], scaled_widths[i]))
                     final_widths.append(width)
-                
+
                 return final_widths
 
         # Fallback to equal distribution if content-based calculation fails
@@ -474,7 +473,7 @@ class MarkdownPDFGenerator:
         x = x0
         self.pdf.set_font("helvetica", font_style, font_size)
         self.pdf.set_text_color(*(self.colors["navy"] if is_header else self.colors["ink"]))
-        for cell, width in zip(row, widths):
+        for cell, width in zip(row, widths, strict=False):
             self.pdf.set_xy(x + 2, y0 + 2)
             self.pdf.multi_cell(
                 max(1, width - 4),
@@ -492,7 +491,7 @@ class MarkdownPDFGenerator:
     def _table_row_height(self, row, widths, font_style, font_size, line_height):
         self.pdf.set_font("helvetica", font_style, font_size)
         max_lines = 1
-        for cell, width in zip(row, widths):
+        for cell, width in zip(row, widths, strict=False):
             lines = self.pdf.multi_cell(
                 max(1, width - 4),
                 line_height,

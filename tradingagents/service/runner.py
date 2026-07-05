@@ -16,8 +16,8 @@ from tradingagents.reporting import (
     finalize_validation_artifacts,
     generate_pdf_from_markdown,
     write_claim_reports,
-    write_decision_evidence_report,
     write_dashboard_report,
+    write_decision_evidence_report,
     write_validation_report,
 )
 
@@ -85,7 +85,7 @@ def validate_report_request(request: ReportRequest) -> None:
 def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
     # Load environment variables directly to avoid import timing issues
     config = DEFAULT_CONFIG.copy()
-    
+
     # Override with current environment variables to ensure we get the latest values
     config["llm_provider"] = os.getenv("TRADINGAGENTS_LLM_PROVIDER", config["llm_provider"])
     config["deep_think_llm"] = os.getenv("TRADINGAGENTS_DEEP_THINK_LLM", config["deep_think_llm"])
@@ -107,9 +107,9 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
     env_provider = config.get("llm_provider")
     env_deep_model = config.get("deep_think_llm")
     env_quick_model = config.get("quick_think_llm")
-    
+
     logger.debug(f"Provider selection | Request provider: {request.llm_provider} | Env provider: {env_provider}")
-    
+
     # Use request provider if specified
     if request.llm_provider is not None:
         config["llm_provider"] = request.llm_provider
@@ -124,9 +124,9 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
         openai_key = os.getenv("OPENAI_API_KEY")
         google_key = os.getenv("GOOGLE_API_KEY")
         ollama_key = os.getenv("OLLAMA_API_KEY")
-        
+
         logger.debug(f"API keys present | OpenAI: {bool(openai_key)} | Google: {bool(google_key)} | Ollama: {bool(ollama_key)}")
-        
+
         if openai_key:
             logger.debug("Auto-selecting OpenAI provider due to presence of OPENAI_API_KEY")
             config["llm_provider"] = "openai"
@@ -157,7 +157,7 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
                 config["deep_think_llm"] = "gpt-4o-mini"
             if env_quick_model is None:
                 config["quick_think_llm"] = "gpt-4o-mini"
-    
+
     # Ensure models are compatible with the selected provider
     final_provider = config["llm_provider"]
     if final_provider == "ollama":
@@ -241,7 +241,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
 
     job_id = job_id or uuid4().hex
     ticker = request.ticker.strip().upper()
-    
+
     logger.info(f"Building config | Job: {job_id} | Ticker: {ticker}")
     config = build_config(request, job_id)
 
@@ -251,7 +251,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         debug=False,
         config=config,
     )
-    
+
     logger.info(f"Starting propagation | Job: {job_id} | Ticker: {ticker} | Date: {request.analysis_date}")
     try:
         final_state, decision = graph.propagate(ticker, request.analysis_date)
@@ -286,7 +286,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         write_claim_reports(report_dir, final_state)
         codes = ", ".join(issue.code for issue in validation_result.blocking_issues)
         raise ValueError(f"Report validation blocked publication: {codes}")
-    
+
     logger.info(f"Saving report to disk | Job: {job_id} | Directory: {report_dir}")
     markdown_path = graph.save_reports(
         final_state,
@@ -297,7 +297,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         expected_analysts=request.selected_analysts,
     )
     logger.info(f"Markdown report saved | Job: {job_id} | Path: {markdown_path}")
-    
+
     logger.info(f"Generating PDF | Job: {job_id} | Ticker: {ticker}")
     pdf_path = generate_pdf_from_markdown(
         markdown_path,

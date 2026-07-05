@@ -9,7 +9,6 @@ from pydantic import BaseModel, Field, ValidationError
 
 from .claims import verified_claims
 
-
 LessonValidationStatus = Literal[
     "validated",
     "invalid",

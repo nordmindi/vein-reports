@@ -5,7 +5,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 InstrumentStatus = Literal["resolved", "ambiguous", "unlisted", "unsupported", "not_found"]
 
 

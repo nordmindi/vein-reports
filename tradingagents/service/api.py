@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import traceback
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime
@@ -396,20 +395,20 @@ def _execute_job(record: JobRecord) -> ReportResult:
     record.status = JobStatus.running
     record.started_at = datetime.now()
     _write_job_record(record)
-    
+
     logger.info(
         f"Job {record.job_id} started | Ticker: {record.request.ticker} | "
         f"Date: {record.request.analysis_date} | Analysts: {record.request.selected_analysts} | "
         f"LLM: {record.request.llm_provider or 'default'}"
     )
-    
+
     try:
         record.result = run_report_job(record.request, job_id=record.job_id)
         record.status = JobStatus.completed
         record.completed_at = datetime.now()
         _write_job_record(record)
         duration = (record.completed_at - record.started_at).total_seconds()
-        
+
         logger.info(
             f"Job {record.job_id} completed successfully | "
             f"Duration: {duration:.2f}s | Decision: {record.result.decision}"
@@ -420,7 +419,7 @@ def _execute_job(record: JobRecord) -> ReportResult:
         record.status = JobStatus.failed
         record.completed_at = datetime.now()
         duration = (record.completed_at - record.started_at).total_seconds()
-        
+
         # Check if this is a quota error from OpenAI
         if "insufficient_quota" in record.error:
             user_friendly_error = "Service temporarily unavailable due to API quota limits. Please try again later or contact support."
@@ -516,12 +515,12 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         if payload.context_bundle is not None
         else None
     )
-    
+
     # Apply tier-based configurations
     selected_analysts = list(payload.selected_analysts)
     max_debate_rounds = payload.max_debate_rounds
     max_risk_discuss_rounds = payload.max_risk_discuss_rounds
-    
+
     if payload.report_tier == ReportTier.free:
         # Free tier: minimal configuration for faster processing
         selected_analysts = ["market"]  # Only market analyst for free tier
@@ -539,7 +538,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
             f"Creating PRO TIER job {job_id} | Ticker: {payload.ticker} | "
             f"Date: {analysis_date} | Analysts: {selected_analysts}"
         )
-    
+
     request = ReportRequest(
         ticker=payload.ticker,
         analysis_date=analysis_date,
@@ -568,7 +567,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
     jobs[job_id] = record
     _write_job_record(record)
     record.future = executor.submit(_execute_job, record)
-    
+
     logger.info(f"Job {job_id} queued successfully")
 
     return CreateReportResponse(
@@ -591,9 +590,9 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
 def get_report(job_id: str) -> ReportJobResponse:
     record = _get_job(job_id)
     result = record.result
-    
+
     logger.debug(f"Fetching job status | Job: {job_id} | Status: {record.status}")
-    
+
     return ReportJobResponse(
         job_id=record.job_id,
         status=record.status,
@@ -623,26 +622,26 @@ def download_report_json(job_id: str) -> dict:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Job not completed or no results available",
         )
-    
+
     # Read the JSON log file that contains all the report data
     # The JSON logs are saved in: reports/api/_logs/job_id / ticker / "TradingAgentsStrategy_logs"
     # But record.result.report_dir is: reports/api/job_id
     # So we need to go to: reports/api/_logs/job_id / ticker / "TradingAgentsStrategy_logs"
     log_dir = record.result.report_dir.parent / "_logs" / job_id / record.result.ticker / "TradingAgentsStrategy_logs"
-    log_files = list(log_dir.glob(f"full_states_log_*.json"))
-    
+    log_files = list(log_dir.glob("full_states_log_*.json"))
+
     if not log_files:
         logger.error(f"JSON log file not found for job {job_id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Report data not found",
         )
-    
+
     # Get the most recent log file
     log_file = sorted(log_files, key=lambda x: x.stat().st_mtime)[-1]
-    
+
     try:
-        with open(log_file, "r", encoding="utf-8") as f:
+        with open(log_file, encoding="utf-8") as f:
             report_data = json.load(f)
         return report_data
     except Exception as e:
@@ -650,7 +649,7 @@ def download_report_json(job_id: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to read report data",
-        )
+        ) from e
 
 
 @app.get(

@@ -6,7 +6,6 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel
 
-
 FreshnessStatus = Literal["fresh", "stale", "blocked", "no_data", "unsupported"]
 
 

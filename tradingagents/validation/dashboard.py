@@ -8,7 +8,6 @@ from pydantic import BaseModel
 
 from tradingagents.agents.utils.rating import parse_rating
 
-
 SAFE_RECOMMENDATION = "INSUFFICIENT_EVIDENCE"
 SAFE_ACTION = "NO_CURRENT_TRANSACTION"
 ACTIONABLE_STATUSES = {"verified"}

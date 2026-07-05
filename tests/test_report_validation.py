@@ -7,15 +7,11 @@ import pytest
 from tradingagents.agents.schemas import (
     PortfolioDecision,
     PortfolioRating,
-    ResearchPlan,
-    TraderAction,
-    TraderProposal,
     render_pm_decision,
-    render_research_plan,
-    render_trader_proposal,
 )
 from tradingagents.reporting import write_report_tree
 from tradingagents.validation import (
+    ValidationResult,
     bearish_divergence,
     bollinger_squeeze_valid,
     build_dashboard_model,
@@ -24,14 +20,12 @@ from tradingagents.validation import (
     check_market_data_freshness,
     check_news_retrieval,
     detect_cross,
-    extract_downstream_claims,
     lesson_is_usable,
     macd_components_reconcile,
     rejected_claims,
     resolve_instrument,
     usable_historical_lessons,
     validate_final_state,
-    ValidationResult,
     verified_claims,
 )
 

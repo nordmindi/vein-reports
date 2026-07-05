@@ -338,7 +338,7 @@ def _load_markdown_pdf_generator() -> type:
             script_path,
         )
         if spec is None or spec.loader is None:
-            raise ImportError(f"Could not load PDF generator from {script_path}")
+            raise ImportError(f"Could not load PDF generator from {script_path}") from None
 
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)

@@ -5,12 +5,12 @@ Professional PDF report generator for compact TradingAgents summaries.
 
 import os
 import re
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Any, Dict, Sequence
+from typing import Any
 
 from fpdf import FPDF
 from fpdf.enums import MethodReturnValue
-
 
 DISPLAY_REPLACEMENTS = {
     "INSUFFICIENT_EVIDENCE": "Insufficient Evidence",
@@ -230,28 +230,28 @@ class VeinReportPDF(FPDF):
         min_widths = []
         max_widths = []
         content_widths = []
-        
+
         for col_idx in range(col_count):
             header = rows[0][col_idx]
             cells = [row[col_idx] for row in body_rows]
             all_cells = [header] + cells
 
             self.set_font("helvetica", "B", 8.0)
-            header_width = self.get_string_width(header) + padding
+            self.get_string_width(header) + padding
             self.set_font("helvetica", "", 8.0)
-            
+
             # Calculate max width needed for any cell in this column
             max_cell_width = max([self.get_string_width(cell) for cell in all_cells] or [0]) + padding
-            
+
             # Calculate average content length for this column
-            avg_content_length = sum(len(str(cell)) for cell in all_cells) / max(1, len(all_cells))
-            
+            sum(len(str(cell)) for cell in all_cells) / max(1, len(all_cells))
+
             # Set minimum width based on content
             min_width = max(12, min(20, max_cell_width * 0.3))  # Minimum 12pt, max 20pt, scaled to content
-            
+
             # Set maximum width based on content
             max_width = min(total_width * 0.6, max(30, max_cell_width))  # Max 60% of total width or max cell width, minimum 30pt
-            
+
             min_widths.append(min_width)
             max_widths.append(max_width)
             content_widths.append(max_cell_width)
@@ -264,19 +264,19 @@ class VeinReportPDF(FPDF):
                 max(min_widths[i], min(max_widths[i], (content_widths[i] / total_content_width) * total_width * 0.9))
                 for i in range(col_count)
             ]
-            
+
             # Adjust to fit exactly within total_width
             current_total = sum(proportional_widths)
             if current_total > 0:
                 scale_factor = total_width / current_total
                 scaled_widths = [width * scale_factor for width in proportional_widths]
-                
+
                 # Ensure widths stay within min/max bounds
                 final_widths = []
                 for i in range(col_count):
                     width = max(min_widths[i], min(max_widths[i], scaled_widths[i]))
                     final_widths.append(width)
-                
+
                 return final_widths
 
         # Fallback to equal distribution if content-based calculation fails
@@ -311,7 +311,7 @@ class VeinReportPDF(FPDF):
         x = x0
         self.set_font("helvetica", font_style, font_size)
         self.set_text_color(*(self.colors["navy"] if is_header else self.colors["ink"]))
-        for cell, width in zip(row, widths):
+        for cell, width in zip(row, widths, strict=False):
             self.set_xy(x + 2, y0 + 2)
             self.multi_cell(
                 max(1, width - 4),
@@ -329,7 +329,7 @@ class VeinReportPDF(FPDF):
     def _table_row_height(self, row, widths, font_style, font_size, line_height):
         self.set_font("helvetica", font_style, font_size)
         max_lines = 1
-        for cell, width in zip(row, widths):
+        for cell, width in zip(row, widths, strict=False):
             lines = self.multi_cell(
                 max(1, width - 4),
                 line_height,
@@ -346,7 +346,7 @@ class PDFGenerator:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
 
-    def generate_report(self, data: Dict) -> str:
+    def generate_report(self, data: dict) -> str:
         ticker = data.get("entity", "Unknown")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")
         filename = f"TradingAgents_Report_{ticker}_{timestamp}.pdf"

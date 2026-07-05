@@ -14,8 +14,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from tradingagents.service.api import app
 import uvicorn
+
 
 def main():
     """Run the TradingAgents service API."""
@@ -24,10 +24,10 @@ def main():
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", os.getenv("SERVICE_PORT", "8000")))
     workers = int(os.getenv("WORKERS", os.getenv("TRADINGAGENTS_SERVICE_WORKERS", "1")))
-    
+
     print(f"Starting TradingAgents service on {host}:{port}")
     print(f"Workers: {workers}")
-    
+
     # Run the FastAPI application
     uvicorn.run(
         "tradingagents.service.api:app",

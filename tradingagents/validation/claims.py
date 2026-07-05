@@ -6,7 +6,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-
 ClaimValidationStatus = Literal[
     "pending",
     "verified",
@@ -280,9 +279,7 @@ def _validated_event(validation: dict | None, expected_event: str) -> bool:
         return False
     if validation.get("validated") is not True:
         return False
-    if validation.get("event") not in (None, expected_event):
-        return False
-    return True
+    return validation.get("event") in (None, expected_event)
 
 
 def _supporting_ids(source_id: str, validation: dict | None) -> list[str]:
@@ -319,7 +316,7 @@ def _dedupe_claims(claims: list[DownstreamClaim]) -> list[DownstreamClaim]:
 
 
 def _claim_id(location: str, statement: str, claim_type: str) -> str:
-    digest = hashlib.sha1(f"{location}|{claim_type}|{statement}".encode("utf-8")).hexdigest()
+    digest = hashlib.sha1(f"{location}|{claim_type}|{statement}".encode()).hexdigest()
     return f"claim:{digest[:16]}"
 
 

@@ -32,7 +32,12 @@ from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
 from tradingagents.reporting import write_report_tree
-from tradingagents.validation import check_market_data_freshness, check_news_retrieval, resolve_instrument
+from tradingagents.validation import (
+    check_market_data_freshness,
+    check_news_retrieval,
+    resolve_instrument,
+)
+
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
 from .propagation import Propagator
