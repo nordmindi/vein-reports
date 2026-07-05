@@ -49,8 +49,8 @@ def test_known_providers_resolve(provider, env_var):
     assert get_api_key_env(provider) == env_var
 
 
-def test_ollama_has_no_key():
-    assert get_api_key_env("ollama") is None
+def test_ollama_uses_optional_api_key_env():
+    assert get_api_key_env("ollama") == "OLLAMA_API_KEY"
 
 
 def test_unknown_provider_returns_none():
@@ -82,7 +82,7 @@ def test_ensure_api_key_returns_existing(monkeypatch, cli_utils):
 
 def test_ensure_api_key_no_op_for_ollama(monkeypatch, cli_utils):
     # Even with no env var set, ollama should not prompt and should return None.
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OLLAMA_API_KEY", raising=False)
     with patch.object(cli_utils, "questionary") as mock_q:
         result = cli_utils.ensure_api_key("ollama")
     assert result is None

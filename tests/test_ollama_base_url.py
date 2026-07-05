@@ -64,6 +64,15 @@ def test_resolver_does_not_affect_other_providers(monkeypatch):
     assert _base_url(mod, "deepseek") == "https://api.deepseek.com"
 
 
+def test_client_get_llm_uses_ollama_api_key_when_set(monkeypatch):
+    """Ollama Cloud requires OLLAMA_API_KEY; local Ollama falls back to a placeholder."""
+    monkeypatch.setenv("OLLAMA_BASE_URL", "https://ollama.com/v1")
+    monkeypatch.setenv("OLLAMA_API_KEY", "test-cloud-key")
+    mod = _reload_client()
+    llm = mod.OpenAIClient(model="glm-5.2:cloud", provider="ollama").get_llm()
+    assert llm.openai_api_key.get_secret_value() == "test-cloud-key"
+
+
 def test_client_get_llm_picks_up_env(monkeypatch):
     """End-to-end: OllamaClient.get_llm() respects OLLAMA_BASE_URL."""
     monkeypatch.setenv("OLLAMA_BASE_URL", "http://my-ollama:11434/v1")

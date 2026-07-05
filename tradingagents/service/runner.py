@@ -199,14 +199,12 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
         if value is not None:
             config[key] = value
 
-    logger.debug(
+    logger.info(
         f"Config built | Job: {job_id} | "
-        f"LLM: {config.get('llm_provider')} | "
+        f"LLM provider: {config.get('llm_provider')} | "
         f"Deep Think: {config.get('deep_think_llm')} | "
         f"Quick Think: {config.get('quick_think_llm')} | "
-        f"Env Provider: {env_provider} | "
-        f"Env Deep: {env_deep_model} | "
-        f"Env Quick: {env_quick_model}"
+        f"Backend URL: {config.get('backend_url') or os.getenv('OLLAMA_BASE_URL', '(provider default)')}"
     )
 
     return config
