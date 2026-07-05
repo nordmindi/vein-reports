@@ -25,6 +25,25 @@ class TestPersistedJobStore:
         assert loaded.status == api.JobStatus.running
         assert loaded.request.ticker == "TSLA"
 
+    def test_get_job_persists_strategy_id(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
+        api.jobs.clear()
+        record = api.JobRecord(
+            "job-strategy",
+            ReportRequest(
+                ticker="FCX",
+                analysis_date="2026-07-05",
+                strategy_id="golden-trend-aggressive",
+            ),
+        )
+        record.status = api.JobStatus.queued
+        api._write_job_record(record)
+        api.jobs.clear()
+
+        loaded = api._get_job("job-strategy")
+
+        assert loaded.request.strategy_id == "golden-trend-aggressive"
+
     def test_get_job_loads_persisted_completed_record(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
         api.jobs.clear()
