@@ -21,6 +21,8 @@ from tradingagents.reporting import (
     write_validation_report,
 )
 
+from tradingagents.service.trace_logging import log_error, log_exception, log_info
+
 logger = logging.getLogger(__name__)
 
 VALID_ANALYSTS = {"market", "social", "news", "fundamentals", "supply_chain"}
@@ -200,12 +202,13 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
         if value is not None:
             config[key] = value
 
-    logger.info(
-        f"Config built | Job: {job_id} | "
-        f"LLM provider: {config.get('llm_provider')} | "
-        f"Deep Think: {config.get('deep_think_llm')} | "
-        f"Quick Think: {config.get('quick_think_llm')} | "
-        f"Backend URL: {config.get('backend_url') or os.getenv('OLLAMA_BASE_URL', '(provider default)')}"
+    log_info(
+        "report_config_built",
+        jobId=job_id,
+        llmProvider=config.get("llm_provider"),
+        deepThink=config.get("deep_think_llm"),
+        quickThink=config.get("quick_think_llm"),
+        backendUrl=config.get("backend_url") or os.getenv("OLLAMA_BASE_URL", "(provider default)"),
     )
 
     return config
@@ -258,35 +261,36 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
 
     golden_trend_signal = fetch_signal_validation(ticker, strategy_id=request.strategy_id)
 
-    logger.info(f"Building config | Job: {job_id} | Ticker: {ticker}")
+    log_info("report_build_config", jobId=job_id, ticker=ticker)
     config = build_config(request, job_id)
     if context_bundle:
         config["vein_context_bundle"] = context_bundle
     config["golden_trend_signal"] = golden_trend_signal or {}
 
-    logger.info(f"Initializing TradingAgentsGraph | Job: {job_id} | Analysts: {request.selected_analysts}")
+    log_info("report_graph_init", jobId=job_id, analysts=list(request.selected_analysts))
     graph = TradingAgentsGraph(
         selected_analysts=list(request.selected_analysts),
         debug=False,
         config=config,
     )
 
-    logger.info(f"Starting propagation | Job: {job_id} | Ticker: {ticker} | Date: {request.analysis_date}")
+    log_info(
+        "report_propagation_started",
+        jobId=job_id,
+        ticker=ticker,
+        analysisDate=request.analysis_date,
+    )
     try:
         final_state, decision = graph.propagate(ticker, request.analysis_date)
-        logger.info(f"Propagation completed | Job: {job_id} | Decision: {decision}")
+        log_info("report_propagation_completed", jobId=job_id, decision=decision)
     except Exception as exc:
         error_msg = str(exc)
-        # Check if this is a quota error from OpenAI
         if "insufficient_quota" in error_msg:
             user_friendly_error = "Service temporarily unavailable due to API quota limits. Please try again later or contact support."
-            logger.error(f"Propagation failed due to API quota limits | Job: {job_id}")
-            # Log the full error with stack trace only for debugging
-            logger.debug(f"Quota error details: {error_msg}", exc_info=True)
+            log_error("report_propagation_quota_failed", jobId=job_id)
             raise Exception(user_friendly_error) from None
-        else:
-            logger.error(f"Propagation failed | Job: {job_id} | Error: {error_msg}", exc_info=True)
-            raise
+        log_exception("report_propagation_failed", exc, jobId=job_id)
+        raise
 
     if golden_trend_signal:
         final_state["golden_trend_signal"] = golden_trend_signal
@@ -311,7 +315,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         codes = ", ".join(issue.code for issue in validation_result.blocking_issues)
         raise ValueError(f"Report validation blocked publication: {codes}")
 
-    logger.info(f"Saving report to disk | Job: {job_id} | Directory: {report_dir}")
+    log_info("report_save_started", jobId=job_id, reportDir=str(report_dir))
     markdown_path = graph.save_reports(
         final_state,
         ticker,
@@ -320,9 +324,9 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         dashboard_model=dashboard_model,
         expected_analysts=request.selected_analysts,
     )
-    logger.info(f"Markdown report saved | Job: {job_id} | Path: {markdown_path}")
+    log_info("report_markdown_saved", jobId=job_id, path=str(markdown_path))
 
-    logger.info(f"Generating PDF | Job: {job_id} | Ticker: {ticker}")
+    log_info("report_pdf_generate_started", jobId=job_id, ticker=ticker)
     pdf_path = generate_pdf_from_markdown(
         markdown_path,
         ticker,
@@ -330,7 +334,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         validation_result=validation_result,
         dashboard_model=dashboard_model,
     )
-    logger.info(f"PDF generated | Job: {job_id} | Path: {pdf_path}")
+    log_info("report_pdf_generated", jobId=job_id, path=str(pdf_path))
 
     return ReportResult(
         job_id=job_id,

@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
 import requests
 
-logger = logging.getLogger(__name__)
+from tradingagents.service.trace_logging import log_warning, trace_headers
 
 
 def is_vein_pull_enabled() -> bool:
@@ -23,7 +22,7 @@ def _base_url() -> str:
 
 
 def _headers() -> dict[str, str]:
-    headers = {"Accept": "application/json"}
+    headers = {"Accept": "application/json", **trace_headers()}
     key = (
         os.getenv("TRADINGAGENTS_VEIN_SERVICE_API_KEY", "").strip()
         or os.getenv("VEIN_SERVICE_API_KEY", "").strip()
@@ -50,7 +49,12 @@ def fetch_supply_chain_context(symbol: str, *, timeout_seconds: float = 20.0) ->
         response.raise_for_status()
         body = response.json()
     except (requests.RequestException, ValueError) as exc:
-        logger.warning("Vein Explorer context fetch failed for %s: %s", ticker, exc)
+        log_warning(
+            "vein_explorer_context_failed",
+            symbol=ticker,
+            error=str(exc),
+            errorType=exc.__class__.__name__,
+        )
         return None
 
     if not isinstance(body, dict):

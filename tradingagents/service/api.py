@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict
@@ -12,8 +11,8 @@ from typing import Any
 from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tradingagents.service.runner import (
@@ -22,18 +21,21 @@ from tradingagents.service.runner import (
     run_report_job,
     validate_report_request,
 )
+from tradingagents.service.trace_logging import (
+    bind_trace,
+    bind_trace_from_mapping,
+    current_trace,
+    log_error,
+    log_exception,
+    log_info,
+    log_warning,
+    reset_trace,
+)
+from tradingagents.service.trace_middleware import TraceMiddleware
 
 # Load environment variables
 load_dotenv()
 load_dotenv(".env.enterprise", override=False)
-
-# Configure logging
-logger = logging.getLogger(__name__)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-
 
 class JobStatus(str, Enum):
     queued = "queued"
@@ -288,9 +290,15 @@ class ReportJobResponse(BaseModel):
 
 
 class JobRecord:
-    def __init__(self, job_id: str, request: ReportRequest) -> None:
+    def __init__(
+        self,
+        job_id: str,
+        request: ReportRequest,
+        trace: dict[str, Any] | None = None,
+    ) -> None:
         self.job_id = job_id
         self.request = request
+        self.trace = trace or current_trace()
         self.status = JobStatus.queued
         self.result: ReportResult | None = None
         self.error: str | None = None
@@ -305,9 +313,76 @@ app = FastAPI(
     version="0.1.0",
     description="Run Vein Reports analysis jobs and download generated PDF reports.",
 )
+app.add_middleware(TraceMiddleware)
 
 executor = ThreadPoolExecutor(max_workers=int(os.getenv("TRADINGAGENTS_SERVICE_WORKERS", "1")))
 jobs: dict[str, JobRecord] = {}
+
+
+def _error_body(
+    *,
+    status_code: int,
+    message: str,
+    path: str,
+    error: str | None = None,
+) -> dict[str, Any]:
+    trace = current_trace()
+    body: dict[str, Any] = {
+        "statusCode": status_code,
+        "message": message,
+        "requestId": trace.get("requestId"),
+        "correlationId": trace.get("correlationId"),
+        "timestamp": datetime.now().isoformat(),
+        "path": path,
+    }
+    if error:
+        body["error"] = error
+    return body
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+    if exc.status_code >= 500:
+        log_exception(
+            "http_request_failed",
+            exc,
+            method=request.method,
+            path=request.url.path,
+            status=exc.status_code,
+        )
+    else:
+        log_warning(
+            "http_request_rejected",
+            method=request.method,
+            path=request.url.path,
+            status=exc.status_code,
+            message=detail,
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_error_body(status_code=exc.status_code, message=detail, path=request.url.path),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    log_exception(
+        "http_request_failed",
+        exc,
+        method=request.method,
+        path=request.url.path,
+        status=500,
+    )
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content=_error_body(
+            status_code=500,
+            message="Internal server error",
+            path=request.url.path,
+            error="Internal Server Error",
+        ),
+    )
 
 
 def _reports_root() -> Path:
@@ -329,6 +404,7 @@ def _write_job_record(record: JobRecord) -> None:
         "status": record.status.value,
         "request": asdict(record.request),
         "error": record.error,
+        "trace": record.trace,
         "created_at": _dt_or_none(record.created_at),
         "started_at": _dt_or_none(record.started_at),
         "completed_at": _dt_or_none(record.completed_at),
@@ -347,7 +423,7 @@ def _load_job_record(job_id: str) -> JobRecord | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         request = ReportRequest(**payload["request"])
-        record = JobRecord(job_id=payload["job_id"], request=request)
+        record = JobRecord(job_id=payload["job_id"], request=request, trace=payload.get("trace"))
         record.status = JobStatus(payload["status"])
         record.error = payload.get("error")
         record.created_at = _parse_dt(payload.get("created_at")) or datetime.now()
@@ -356,7 +432,7 @@ def _load_job_record(job_id: str) -> JobRecord | None:
         record.result = _load_result(payload.get("result"))
         return record
     except Exception as exc:
-        logger.error("Failed to load job metadata for %s: %s", job_id, exc, exc_info=True)
+        log_exception("job_metadata_load_failed", exc, jobId=job_id)
         return None
 
 
@@ -404,11 +480,21 @@ def _parse_dt(value: str | None) -> datetime | None:
 def require_service_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = os.getenv("TRADINGAGENTS_SERVICE_API_KEY")
     if expected and x_api_key != expected:
-        logger.warning("Invalid API key attempt")
+        log_warning("service_auth_failed", reason="invalid_api_key")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="invalid service API key",
         )
+
+
+def _run_job_in_context(record: JobRecord) -> ReportResult:
+    tokens = bind_trace_from_mapping(record.trace, default_service="vein-reports")
+    job_tokens = bind_trace(job_id=record.job_id, span="report.job.execute")
+    try:
+        return _execute_job(record)
+    finally:
+        reset_trace(job_tokens)
+        reset_trace(tokens)
 
 
 def _execute_job(record: JobRecord) -> ReportResult:
@@ -416,10 +502,13 @@ def _execute_job(record: JobRecord) -> ReportResult:
     record.started_at = datetime.now()
     _write_job_record(record)
 
-    logger.info(
-        f"Job {record.job_id} started | Ticker: {record.request.ticker} | "
-        f"Date: {record.request.analysis_date} | Analysts: {record.request.selected_analysts} | "
-        f"LLM: {record.request.llm_provider or 'default'}"
+    log_info(
+        "report_job_started",
+        jobId=record.job_id,
+        ticker=record.request.ticker,
+        analysisDate=record.request.analysis_date,
+        analysts=list(record.request.selected_analysts),
+        llmProvider=record.request.llm_provider or "default",
     )
 
     try:
@@ -429,9 +518,11 @@ def _execute_job(record: JobRecord) -> ReportResult:
         _write_job_record(record)
         duration = (record.completed_at - record.started_at).total_seconds()
 
-        logger.info(
-            f"Job {record.job_id} completed successfully | "
-            f"Duration: {duration:.2f}s | Decision: {record.result.decision}"
+        log_info(
+            "report_job_completed",
+            jobId=record.job_id,
+            durationSec=round(duration, 2),
+            decision=record.result.decision,
         )
         return record.result
     except Exception as exc:
@@ -440,24 +531,20 @@ def _execute_job(record: JobRecord) -> ReportResult:
         record.completed_at = datetime.now()
         duration = (record.completed_at - record.started_at).total_seconds()
 
-        # Check if this is a quota error from OpenAI
         if "insufficient_quota" in record.error:
             user_friendly_error = "Service temporarily unavailable due to API quota limits. Please try again later or contact support."
-            logger.error(
-                f"Job {record.job_id} failed due to API quota limits | Duration: {duration:.2f}s"
+            log_error(
+                "report_job_failed_quota",
+                jobId=record.job_id,
+                durationSec=round(duration, 2),
             )
-            # Log the full error with stack trace only for debugging
-            logger.debug(
-                f"Quota error details: {record.error}",
-                exc_info=True,
-            )
-            # Update the error message that will be returned to the user
             record.error = user_friendly_error
         else:
-            logger.error(
-                f"Job {record.job_id} failed | Duration: {duration:.2f}s | "
-                f"Error: {record.error}",
-                exc_info=True,
+            log_exception(
+                "report_job_failed",
+                exc,
+                jobId=record.job_id,
+                durationSec=round(duration, 2),
             )
         _write_job_record(record)
         raise
@@ -468,7 +555,7 @@ def _get_job(job_id: str) -> JobRecord:
     if record is None:
         record = _load_job_record(job_id)
     if record is None:
-        logger.warning(f"Job {job_id} not found in memory or persisted job store")
+        log_warning("job_not_found", jobId=job_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
     return record
 
@@ -480,10 +567,11 @@ def _report_url(job_id: str, suffix: str) -> str:
 def _read_completed_artifact(job_id: str, filename: str) -> dict[str, Any]:
     record = _get_job(job_id)
     if record.status != JobStatus.completed or record.result is None:
-        logger.warning(
-            "Artifact download attempted for incomplete job | Job: %s | Status: %s",
-            job_id,
-            record.status,
+        log_warning(
+            "artifact_download_incomplete",
+            jobId=job_id,
+            status=record.status.value,
+            filename=filename,
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -492,7 +580,7 @@ def _read_completed_artifact(job_id: str, filename: str) -> dict[str, Any]:
 
     artifact_path = Path(record.result.report_dir) / filename
     if not artifact_path.exists():
-        logger.error("Artifact not found | Job: %s | Path: %s", job_id, artifact_path)
+        log_error("artifact_not_found", jobId=job_id, filename=filename, path=str(artifact_path))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"{filename} not found",
@@ -501,13 +589,7 @@ def _read_completed_artifact(job_id: str, filename: str) -> dict[str, Any]:
     try:
         return json.loads(artifact_path.read_text(encoding="utf-8"))
     except Exception as exc:
-        logger.error(
-            "Failed to read artifact | Job: %s | File: %s | Error: %s",
-            job_id,
-            filename,
-            exc,
-            exc_info=True,
-        )
+        log_exception("artifact_read_failed", exc, jobId=job_id, filename=filename)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"failed to read {filename}",
@@ -517,7 +599,6 @@ def _read_completed_artifact(job_id: str, filename: str) -> dict[str, Any]:
 @app.get("/health")
 def health() -> dict[str, str]:
     active_jobs = sum(1 for j in jobs.values() if j.status == JobStatus.running)
-    logger.debug(f"Health check | Active jobs: {active_jobs} | Total jobs: {len(jobs)}")
     return {"status": "ok", "active_jobs": str(active_jobs), "total_jobs": str(len(jobs))}
 
 
@@ -546,17 +627,22 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         selected_analysts = ["market"]  # Only market analyst for free tier
         max_debate_rounds = max_debate_rounds or 1  # Limit debate rounds
         max_risk_discuss_rounds = max_risk_discuss_rounds or 1  # Limit risk discussion
-        logger.info(
-            f"Creating FREE TIER job {job_id} | Ticker: {payload.ticker} | "
-            f"Date: {analysis_date} | Analysts: {selected_analysts}"
+        log_info(
+            "report_job_create_free_tier",
+            jobId=job_id,
+            ticker=payload.ticker,
+            analysisDate=analysis_date,
+            analysts=selected_analysts,
         )
     else:
         if context_bundle is not None and "supply_chain" not in selected_analysts:
             selected_analysts.append("supply_chain")
-        # Pro tier: full configuration
-        logger.info(
-            f"Creating PRO TIER job {job_id} | Ticker: {payload.ticker} | "
-            f"Date: {analysis_date} | Analysts: {selected_analysts}"
+        log_info(
+            "report_job_create_pro_tier",
+            jobId=job_id,
+            ticker=payload.ticker,
+            analysisDate=analysis_date,
+            analysts=selected_analysts,
         )
 
     request = ReportRequest(
@@ -578,18 +664,18 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
     try:
         validate_report_request(request)
     except ValueError as exc:
-        logger.error(f"Job {job_id} validation failed: {str(exc)}")
+        log_warning("report_job_validation_failed", jobId=job_id, error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
 
-    record = JobRecord(job_id, request)
+    record = JobRecord(job_id, request, trace=current_trace())
     jobs[job_id] = record
     _write_job_record(record)
-    record.future = executor.submit(_execute_job, record)
+    record.future = executor.submit(_run_job_in_context, record)
 
-    logger.info(f"Job {job_id} queued successfully")
+    log_info("report_job_queued", jobId=job_id, ticker=payload.ticker, reportTier=payload.report_tier.value)
 
     return CreateReportResponse(
         job_id=job_id,
@@ -611,8 +697,6 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
 def get_report(job_id: str) -> ReportJobResponse:
     record = _get_job(job_id)
     result = record.result
-
-    logger.debug(f"Fetching job status | Job: {job_id} | Status: {record.status}")
 
     return ReportJobResponse(
         job_id=record.job_id,
@@ -636,8 +720,10 @@ def download_report_json(job_id: str) -> dict:
     """Download the complete report data as JSON for dashboard integration."""
     record = _get_job(job_id)
     if record.status != JobStatus.completed or record.result is None:
-        logger.warning(
-            f"JSON download attempted for incomplete job | Job: {job_id} | Status: {record.status}"
+        log_warning(
+            "json_download_incomplete",
+            jobId=job_id,
+            status=record.status.value,
         )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -652,7 +738,7 @@ def download_report_json(job_id: str) -> dict:
     log_files = list(log_dir.glob("full_states_log_*.json"))
 
     if not log_files:
-        logger.error(f"JSON log file not found for job {job_id}")
+        log_error("json_log_not_found", jobId=job_id, logDir=str(log_dir))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Report data not found",
@@ -665,8 +751,8 @@ def download_report_json(job_id: str) -> dict:
         with open(log_file, encoding="utf-8") as f:
             report_data = json.load(f)
         return report_data
-    except Exception as e:
-        logger.error(f"Failed to read JSON report for job {job_id}: {str(e)}")
+    except Exception as exc:
+        log_exception("json_report_read_failed", exc, jobId=job_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to read report data",
@@ -707,8 +793,10 @@ def download_decision_evidence(job_id: str) -> dict[str, Any]:
 def download_report_pdf(job_id: str) -> FileResponse:
     record = _get_job(job_id)
     if record.status != JobStatus.completed or record.result is None:
-        logger.warning(
-            f"PDF download attempted for incomplete job | Job: {job_id} | Status: {record.status}"
+        log_warning(
+            "pdf_download_incomplete",
+            jobId=job_id,
+            status=record.status.value,
         )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -717,13 +805,13 @@ def download_report_pdf(job_id: str) -> FileResponse:
 
     pdf_path = Path(record.result.pdf_path)
     if not pdf_path.exists():
-        logger.error(f"PDF file not found | Job: {job_id} | Path: {pdf_path}")
+        log_error("pdf_not_found", jobId=job_id, path=str(pdf_path))
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="pdf not found",
         )
 
-    logger.info(f"Downloading PDF | Job: {job_id} | File: {pdf_path.name}")
+    log_info("pdf_download", jobId=job_id, filename=pdf_path.name)
     return FileResponse(
         pdf_path,
         media_type="application/pdf",

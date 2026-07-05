@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Any
 
 import requests
 
-logger = logging.getLogger(__name__)
+from tradingagents.service.trace_logging import log_warning, trace_headers
 
 EXECUTABLE_FINALS = frozenset(
     {
@@ -32,7 +31,7 @@ def _base_url() -> str:
 
 
 def _headers() -> dict[str, str]:
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {"Content-Type": "application/json", "Accept": "application/json", **trace_headers()}
     key = os.getenv("TRADINGAGENTS_GOLDEN_TREND_API_KEY", "").strip()
     if key:
         headers["X-API-Key"] = key
@@ -72,7 +71,12 @@ def analyze_symbol(
         response.raise_for_status()
         body = response.json()
     except (requests.RequestException, ValueError) as exc:
-        logger.warning("Vein Signals analyze failed for %s: %s", symbol, exc)
+        log_warning(
+            "golden_trend_analyze_failed",
+            symbol=symbol,
+            error=str(exc),
+            errorType=exc.__class__.__name__,
+        )
         return None
 
     if not isinstance(body, dict):
