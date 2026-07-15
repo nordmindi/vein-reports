@@ -719,6 +719,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         user_id=payload.user_id,
         context_bundle=context_bundle,
         strategy_id=payload.strategy_id,
+        report_tier=payload.report_tier.value,
     )
     try:
         validate_report_request(request)

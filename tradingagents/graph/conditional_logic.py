@@ -3,51 +3,63 @@
 from tradingagents.agents.utils.agent_states import AgentState
 
 
+def _count_tool_call_rounds(messages) -> int:
+    count = 0
+    for message in messages:
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            count += 1
+    return count
+
+
 class ConditionalLogic:
     """Handles conditional logic for determining graph flow."""
 
-    def __init__(self, max_debate_rounds=1, max_risk_discuss_rounds=1):
+    def __init__(
+        self,
+        max_debate_rounds=1,
+        max_risk_discuss_rounds=1,
+        max_tool_rounds_per_analyst: int | None = None,
+    ):
         """Initialize with configuration parameters."""
         self.max_debate_rounds = max_debate_rounds
         self.max_risk_discuss_rounds = max_risk_discuss_rounds
+        self.max_tool_rounds_per_analyst = max_tool_rounds_per_analyst
+
+    def _should_continue_with_tool_cap(
+        self,
+        state: AgentState,
+        tools_label: str,
+        clear_label: str,
+    ) -> str:
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            if self.max_tool_rounds_per_analyst is not None:
+                if _count_tool_call_rounds(messages) >= self.max_tool_rounds_per_analyst:
+                    return clear_label
+            return tools_label
+        return clear_label
 
     def should_continue_market(self, state: AgentState):
         """Determine if market analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_market"
-        return "Msg Clear Market"
+        return self._should_continue_with_tool_cap(state, "tools_market", "Msg Clear Market")
 
     def should_continue_social(self, state: AgentState):
-        """Determine if sentiment-analyst tool round should continue.
-
-        Method name keeps the legacy ``social`` suffix to match the
-        ``AnalystType.SOCIAL = "social"`` wire value (saved-config
-        back-compat); the returned ``clear_node`` label uses the v0.2.5
-        rename so it matches the node registered by the execution plan.
-        """
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_social"
-        return "Msg Clear Sentiment"
+        """Determine if sentiment-analyst tool round should continue."""
+        return self._should_continue_with_tool_cap(state, "tools_social", "Msg Clear Sentiment")
 
     def should_continue_news(self, state: AgentState):
         """Determine if news analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_news"
-        return "Msg Clear News"
+        return self._should_continue_with_tool_cap(state, "tools_news", "Msg Clear News")
 
     def should_continue_fundamentals(self, state: AgentState):
         """Determine if fundamentals analysis should continue."""
-        messages = state["messages"]
-        last_message = messages[-1]
-        if last_message.tool_calls:
-            return "tools_fundamentals"
-        return "Msg Clear Fundamentals"
+        return self._should_continue_with_tool_cap(
+            state,
+            "tools_fundamentals",
+            "Msg Clear Fundamentals",
+        )
 
     def should_continue_supply_chain(self, state: AgentState):
         """Supply-chain analyst has no tool loop; always proceed to clear."""

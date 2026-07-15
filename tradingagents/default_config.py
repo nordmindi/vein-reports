@@ -120,6 +120,12 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
     "max_recur_limit": 100,
+    # Cap analyst tool-calling loops (None = unlimited). Overridden per report_tier.
+    "max_tool_rounds_per_analyst": None,
+    # full = debate/risk pipeline; lite = analysts then single decision call
+    "pipeline_mode": "full",
+    "use_deep_research_manager": True,
+    "use_deep_portfolio_manager": True,
     # News / data fetching parameters
     # Increase for longer lookback strategies or to broaden macro coverage;
     # decrease to reduce token usage in agent prompts.

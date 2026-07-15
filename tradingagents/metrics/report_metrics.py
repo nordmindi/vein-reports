@@ -40,6 +40,8 @@ def build_report_metrics(
         "analysis_date": analysis_date,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "duration_sec": round(duration_sec, 3),
+        "report_tier": config.get("report_tier"),
+        "pipeline_mode": config.get("pipeline_mode"),
         "llm_provider": config.get("llm_provider"),
         "models_configured": {
             "deep": config.get("deep_think_llm"),

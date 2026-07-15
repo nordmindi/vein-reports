@@ -81,7 +81,7 @@ Response:
 | `ticker` | string | Required. Normalized to uppercase. |
 | `analysis_date` | string \| null | `YYYY-MM-DD`; defaults to the service date. Future dates are rejected. |
 | `selected_analysts` | string[] | Allowed: `market`, `social`, `news`, `fundamentals`, `supply_chain`. |
-| `report_tier` | `free` \| `pro` | Defaults to `pro`. `free` forces `selected_analysts` to `["market"]`. |
+| `report_tier` | `free` \| `pro` | Defaults to `pro`. `free` runs market analyst only with a **lite pipeline** (single final decision call, no debate/risk graph). |
 | `context_bundle` | object \| null | Optional VEIN supply-chain context. Pro jobs auto-add `supply_chain`. |
 | `llm_provider` | string \| null | Optional provider override. |
 | `deep_think_llm` | string \| null | Optional model override. |

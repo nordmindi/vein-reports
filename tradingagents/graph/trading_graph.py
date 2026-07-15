@@ -109,12 +109,16 @@ class TradingAgentsGraph:
         self.conditional_logic = ConditionalLogic(
             max_debate_rounds=self.config["max_debate_rounds"],
             max_risk_discuss_rounds=self.config["max_risk_discuss_rounds"],
+            max_tool_rounds_per_analyst=self.config.get("max_tool_rounds_per_analyst"),
         )
         self.graph_setup = GraphSetup(
             self.quick_thinking_llm,
             self.deep_thinking_llm,
             self.tool_nodes,
             self.conditional_logic,
+            pipeline_mode=self.config.get("pipeline_mode", "full"),
+            use_deep_research_manager=bool(self.config.get("use_deep_research_manager", True)),
+            use_deep_portfolio_manager=bool(self.config.get("use_deep_portfolio_manager", True)),
         )
 
         self.propagator = Propagator(

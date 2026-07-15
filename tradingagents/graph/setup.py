@@ -21,6 +21,7 @@ from tradingagents.agents import (
     create_supply_chain_analyst,
     create_trader,
 )
+from tradingagents.agents.managers.lite_decision import create_lite_decision_agent
 from tradingagents.agents.utils.agent_states import AgentState
 
 from .analyst_execution import build_analyst_execution_plan
@@ -36,12 +37,19 @@ class GraphSetup:
         deep_thinking_llm: Any,
         tool_nodes: dict[str, ToolNode],
         conditional_logic: ConditionalLogic,
+        *,
+        pipeline_mode: str = "full",
+        use_deep_research_manager: bool = True,
+        use_deep_portfolio_manager: bool = True,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
         self.deep_thinking_llm = deep_thinking_llm
         self.tool_nodes = tool_nodes
         self.conditional_logic = conditional_logic
+        self.pipeline_mode = pipeline_mode
+        self.use_deep_research_manager = use_deep_research_manager
+        self.use_deep_portfolio_manager = use_deep_portfolio_manager
 
     def setup_graph(
         self, selected_analysts=("market", "social", "news", "fundamentals")
@@ -60,14 +68,25 @@ class GraphSetup:
         # Create researcher and manager nodes
         bull_researcher_node = create_bull_researcher(self.quick_thinking_llm)
         bear_researcher_node = create_bear_researcher(self.quick_thinking_llm)
-        research_manager_node = create_research_manager(self.deep_thinking_llm)
+        research_manager_llm = (
+            self.deep_thinking_llm
+            if self.use_deep_research_manager
+            else self.quick_thinking_llm
+        )
+        research_manager_node = create_research_manager(research_manager_llm)
         trader_node = create_trader(self.quick_thinking_llm)
 
         # Create risk analysis nodes
         aggressive_analyst = create_aggressive_debator(self.quick_thinking_llm)
         neutral_analyst = create_neutral_debator(self.quick_thinking_llm)
         conservative_analyst = create_conservative_debator(self.quick_thinking_llm)
-        portfolio_manager_node = create_portfolio_manager(self.deep_thinking_llm)
+        portfolio_manager_llm = (
+            self.deep_thinking_llm
+            if self.use_deep_portfolio_manager
+            else self.quick_thinking_llm
+        )
+        portfolio_manager_node = create_portfolio_manager(portfolio_manager_llm)
+        lite_decision_node = create_lite_decision_agent(self.quick_thinking_llm)
 
         # Create workflow
         workflow = StateGraph(AgentState)
@@ -88,9 +107,11 @@ class GraphSetup:
         workflow.add_node("Neutral Analyst", neutral_analyst)
         workflow.add_node("Conservative Analyst", conservative_analyst)
         workflow.add_node("Portfolio Manager", portfolio_manager_node)
+        workflow.add_node("Lite Decision", lite_decision_node)
 
         # Define edges
         workflow.add_edge(START, plan.specs[0].agent_node)
+        lite_pipeline = self.pipeline_mode == "lite"
 
         # Connect analysts in sequence
         for i, spec in enumerate(plan.specs):
@@ -110,10 +131,16 @@ class GraphSetup:
 
             if i < len(plan.specs) - 1:
                 workflow.add_edge(current_clear, plan.specs[i + 1].agent_node)
+            elif lite_pipeline:
+                workflow.add_edge(current_clear, "Lite Decision")
             else:
                 workflow.add_edge(current_clear, "Bull Researcher")
 
-        # Add remaining edges
+        if lite_pipeline:
+            workflow.add_edge("Lite Decision", END)
+            return workflow
+
+        # Full pipeline: debate, trader, risk, portfolio manager
         workflow.add_conditional_edges(
             "Bull Researcher",
             self.conditional_logic.should_continue_debate,

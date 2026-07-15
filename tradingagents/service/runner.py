@@ -27,6 +27,7 @@ from tradingagents.reporting import (
     write_validation_report,
 )
 
+from tradingagents.service.tier_profiles import apply_tier_profile
 from tradingagents.service.trace_logging import log_error, log_exception, log_info
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,7 @@ class ReportRequest:
     user_id: str | None = None
     context_bundle: dict[str, Any] | None = None
     strategy_id: str | None = None
+    report_tier: str = "pro"
 
 
 @dataclass(frozen=True)
@@ -209,12 +211,17 @@ def build_config(request: ReportRequest, job_id: str) -> dict[str, Any]:
         if value is not None:
             config[key] = value
 
+    apply_tier_profile(config, request.report_tier)
+
     log_info(
         "report_config_built",
         jobId=job_id,
+        reportTier=config.get("report_tier"),
+        pipelineMode=config.get("pipeline_mode"),
         llmProvider=config.get("llm_provider"),
         deepThink=config.get("deep_think_llm"),
         quickThink=config.get("quick_think_llm"),
+        maxToolRounds=config.get("max_tool_rounds_per_analyst"),
         backendUrl=config.get("backend_url") or os.getenv("OLLAMA_BASE_URL", "(provider default)"),
     )
 
