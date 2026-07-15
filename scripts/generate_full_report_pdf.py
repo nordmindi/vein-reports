@@ -7,6 +7,8 @@ from pathlib import Path
 from fpdf import FPDF
 from fpdf.enums import MethodReturnValue
 
+from tradingagents.agents.utils.report_text import sanitize_agent_report_text
+
 DISPLAY_REPLACEMENTS = {
     "INSUFFICIENT_EVIDENCE": "Insufficient Evidence",
     "NO_CURRENT_TRANSACTION": "No current transaction",
@@ -191,6 +193,7 @@ class MarkdownPDFGenerator:
     def _clean_line(self, text):
         if not text:
             return ""
+        text = sanitize_agent_report_text(text)
         text = "".join(c for c in str(text) if ord(c) < 256)
         text = text.replace("**", "")
         text = display_text(text)
@@ -270,6 +273,7 @@ class MarkdownPDFGenerator:
         return metrics
 
     def add_markdown_content(self, md_text):
+        md_text = sanitize_agent_report_text(md_text)
         lines = md_text.split("\n")
         table_rows = []
 

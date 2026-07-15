@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from tradingagents.agents.utils.report_text import sanitize_agent_report_text
 from tradingagents.validation import (
     DashboardModel,
     ValidationResult,
@@ -125,24 +126,29 @@ def write_report_tree(
     analyst_parts = []
     if final_state.get("market_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "market.md").write_text(final_state["market_report"], encoding="utf-8")
-        analyst_parts.append(("Market Analyst", final_state["market_report"]))
+        market_report = sanitize_agent_report_text(final_state["market_report"])
+        (analysts_dir / "market.md").write_text(market_report, encoding="utf-8")
+        analyst_parts.append(("Market Analyst", market_report))
     if final_state.get("sentiment_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "sentiment.md").write_text(final_state["sentiment_report"], encoding="utf-8")
-        analyst_parts.append(("Sentiment Analyst", final_state["sentiment_report"]))
+        sentiment_report = sanitize_agent_report_text(final_state["sentiment_report"])
+        (analysts_dir / "sentiment.md").write_text(sentiment_report, encoding="utf-8")
+        analyst_parts.append(("Sentiment Analyst", sentiment_report))
     if final_state.get("news_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "news.md").write_text(final_state["news_report"], encoding="utf-8")
-        analyst_parts.append(("News Analyst", final_state["news_report"]))
+        news_report = sanitize_agent_report_text(final_state["news_report"])
+        (analysts_dir / "news.md").write_text(news_report, encoding="utf-8")
+        analyst_parts.append(("News Analyst", news_report))
     if final_state.get("fundamentals_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "fundamentals.md").write_text(final_state["fundamentals_report"], encoding="utf-8")
-        analyst_parts.append(("Fundamentals Analyst", final_state["fundamentals_report"]))
+        fundamentals_report = sanitize_agent_report_text(final_state["fundamentals_report"])
+        (analysts_dir / "fundamentals.md").write_text(fundamentals_report, encoding="utf-8")
+        analyst_parts.append(("Fundamentals Analyst", fundamentals_report))
     if final_state.get("supply_chain_report"):
         analysts_dir.mkdir(exist_ok=True)
-        (analysts_dir / "supply_chain.md").write_text(final_state["supply_chain_report"], encoding="utf-8")
-        analyst_parts.append(("Supply Chain Analyst", final_state["supply_chain_report"]))
+        supply_chain_report = sanitize_agent_report_text(final_state["supply_chain_report"])
+        (analysts_dir / "supply_chain.md").write_text(supply_chain_report, encoding="utf-8")
+        analyst_parts.append(("Supply Chain Analyst", supply_chain_report))
     if analyst_parts:
         content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
         sections.append(f"## I. Analyst Team Reports\n\n{content}")
@@ -154,16 +160,19 @@ def write_report_tree(
         research_parts = []
         if debate.get("bull_history"):
             research_dir.mkdir(exist_ok=True)
-            (research_dir / "bull.md").write_text(debate["bull_history"], encoding="utf-8")
-            research_parts.append(("Bull Researcher", debate["bull_history"]))
+            bull_history = sanitize_agent_report_text(debate["bull_history"])
+            (research_dir / "bull.md").write_text(bull_history, encoding="utf-8")
+            research_parts.append(("Bull Researcher", bull_history))
         if debate.get("bear_history"):
             research_dir.mkdir(exist_ok=True)
-            (research_dir / "bear.md").write_text(debate["bear_history"], encoding="utf-8")
-            research_parts.append(("Bear Researcher", debate["bear_history"]))
+            bear_history = sanitize_agent_report_text(debate["bear_history"])
+            (research_dir / "bear.md").write_text(bear_history, encoding="utf-8")
+            research_parts.append(("Bear Researcher", bear_history))
         if debate.get("judge_decision"):
             research_dir.mkdir(exist_ok=True)
-            (research_dir / "manager.md").write_text(debate["judge_decision"], encoding="utf-8")
-            research_parts.append(("Research Manager", debate["judge_decision"]))
+            judge_decision = sanitize_agent_report_text(debate["judge_decision"])
+            (research_dir / "manager.md").write_text(judge_decision, encoding="utf-8")
+            research_parts.append(("Research Manager", judge_decision))
         if research_parts:
             content = "\n\n".join(f"### {name}\n{text}" for name, text in research_parts)
             sections.append(f"## II. Research Team Decision\n\n{content}")
@@ -172,8 +181,9 @@ def write_report_tree(
     if final_state.get("trader_investment_plan"):
         trading_dir = save_path / "3_trading"
         trading_dir.mkdir(exist_ok=True)
-        (trading_dir / "trader.md").write_text(final_state["trader_investment_plan"], encoding="utf-8")
-        sections.append(f"## III. Trading Team Plan\n\n### Trader\n{final_state['trader_investment_plan']}")
+        trader_plan = sanitize_agent_report_text(final_state["trader_investment_plan"])
+        (trading_dir / "trader.md").write_text(trader_plan, encoding="utf-8")
+        sections.append(f"## III. Trading Team Plan\n\n### Trader\n{trader_plan}")
 
     # 4. Risk Management
     if final_state.get("risk_debate_state"):
@@ -182,16 +192,19 @@ def write_report_tree(
         risk_parts = []
         if risk.get("aggressive_history"):
             risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "aggressive.md").write_text(risk["aggressive_history"], encoding="utf-8")
-            risk_parts.append(("Aggressive Analyst", risk["aggressive_history"]))
+            aggressive_history = sanitize_agent_report_text(risk["aggressive_history"])
+            (risk_dir / "aggressive.md").write_text(aggressive_history, encoding="utf-8")
+            risk_parts.append(("Aggressive Analyst", aggressive_history))
         if risk.get("conservative_history"):
             risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "conservative.md").write_text(risk["conservative_history"], encoding="utf-8")
-            risk_parts.append(("Conservative Analyst", risk["conservative_history"]))
+            conservative_history = sanitize_agent_report_text(risk["conservative_history"])
+            (risk_dir / "conservative.md").write_text(conservative_history, encoding="utf-8")
+            risk_parts.append(("Conservative Analyst", conservative_history))
         if risk.get("neutral_history"):
             risk_dir.mkdir(exist_ok=True)
-            (risk_dir / "neutral.md").write_text(risk["neutral_history"], encoding="utf-8")
-            risk_parts.append(("Neutral Analyst", risk["neutral_history"]))
+            neutral_history = sanitize_agent_report_text(risk["neutral_history"])
+            (risk_dir / "neutral.md").write_text(neutral_history, encoding="utf-8")
+            risk_parts.append(("Neutral Analyst", neutral_history))
         if risk_parts:
             content = "\n\n".join(f"### {name}\n{text}" for name, text in risk_parts)
             sections.append(f"## IV. Risk Management Team Decision\n\n{content}")
@@ -201,7 +214,7 @@ def write_report_tree(
             portfolio_dir = save_path / "5_portfolio"
             portfolio_dir.mkdir(exist_ok=True)
             portfolio_decision = _published_portfolio_decision(
-                raw_decision=risk["judge_decision"],
+                raw_decision=sanitize_agent_report_text(risk["judge_decision"]),
                 validation_result=validation_result,
                 dashboard_model=dashboard_model,
             )
@@ -231,7 +244,7 @@ def generate_pdf_from_markdown(
     """Generate a PDF report from an existing markdown report."""
     MarkdownPDFGenerator = _load_markdown_pdf_generator()
 
-    content = md_path.read_text(encoding="utf-8")
+    content = sanitize_agent_report_text(md_path.read_text(encoding="utf-8"))
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     generator = MarkdownPDFGenerator(

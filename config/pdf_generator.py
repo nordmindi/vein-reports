@@ -12,6 +12,8 @@ from typing import Any
 from fpdf import FPDF
 from fpdf.enums import MethodReturnValue
 
+from tradingagents.agents.utils.report_text import sanitize_agent_report_text
+
 DISPLAY_REPLACEMENTS = {
     "INSUFFICIENT_EVIDENCE": "Insufficient Evidence",
     "NO_CURRENT_TRANSACTION": "No current transaction",
@@ -156,6 +158,7 @@ class VeinReportPDF(FPDF):
     def clean_text(self, text):
         if not isinstance(text, str):
             text = str(text)
+        text = sanitize_agent_report_text(text)
         text = "".join(c for c in text if ord(c) < 256)
         return display_text(text).strip()
 

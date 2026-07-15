@@ -90,3 +90,27 @@ def test_save_reports_defaults_under_results_dir(tmp_path):
     assert out.exists()
     assert out.parent.parent.name == "reports"  # results_dir/reports/AAPL_<stamp>/...
     assert out.parent.name.startswith("AAPL_")
+
+
+@pytest.mark.unit
+def test_write_report_tree_strips_tool_call_markup(tmp_path):
+    bear_with_tool_call = (
+        "Bear Analyst: I'll gather data.\n"
+        "<tool_call>\n"
+        '<tool name="ddg-search">\n'
+        '<parameter name="query">Sumco Corporation</parameter>\n'
+        "</tool>\n"
+        "</tool_call>\n"
+        "The silicon wafer cycle remains weak into 2026."
+    )
+    state = _state()
+    state["investment_debate_state"] = {
+        "bear_history": bear_with_tool_call,
+        "judge_decision": "RM PLAN",
+    }
+    out = write_report_tree(state, "3436.T", tmp_path)
+    bear_md = (tmp_path / "2_research" / "bear.md").read_text()
+    complete = out.read_text()
+    assert "<tool_call>" not in bear_md
+    assert "<tool_call>" not in complete
+    assert "silicon wafer cycle remains weak" in bear_md
