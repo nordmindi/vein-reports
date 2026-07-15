@@ -5,7 +5,7 @@ from tradingagents.agents.utils.debate_context import (
     collect_analyst_reports_for_brief,
     format_debate_analyst_context,
 )
-from tradingagents.llm_clients.llm_cache import CachedLLMProxy, DiskLLMCache
+from tradingagents.llm_clients.llm_cache import DiskLLMCache, patch_llm_cache
 
 
 class _StubLLM:
@@ -17,6 +17,20 @@ class _StubLLM:
     def invoke(self, input_value, config=None, **kwargs):
         self.calls += 1
         return AIMessage(content=f"echo:{input_value}")
+
+    def bind_tools(self, tools, **kwargs):
+        bound = _StubBoundLLM(self, tools)
+        return bound
+
+
+class _StubBoundLLM(_StubLLM):
+    def __init__(self, parent: _StubLLM, tools):
+        super().__init__()
+        self._parent = parent
+
+    def invoke(self, input_value, config=None, **kwargs):
+        self._parent.calls += 1
+        return AIMessage(content=f"bound:{input_value}")
 
 
 @pytest.mark.unit
@@ -50,21 +64,28 @@ class TestDebateContext:
 class TestLLMCache:
     def test_cache_hit_skips_second_invoke(self, tmp_path):
         cache = DiskLLMCache(tmp_path, "TSLA:2026-07-15")
-        llm = _StubLLM()
-        proxy = CachedLLMProxy(llm, cache)
+        llm = patch_llm_cache(_StubLLM(), cache)
 
-        first = proxy.invoke("same prompt")
-        second = proxy.invoke("same prompt")
+        first = llm.invoke("same prompt")
+        second = llm.invoke("same prompt")
 
-        assert llm.calls == 1
         assert first.content == second.content
         assert cache.stats()["hits"] == 1
         assert cache.stats()["misses"] == 1
 
+    def test_bind_tools_returns_runnable_compatible_object(self, tmp_path):
+        cache = DiskLLMCache(tmp_path, "TSLA:2026-07-15")
+        llm = patch_llm_cache(_StubLLM(), cache)
+        bound = llm.bind_tools([])
+        assert hasattr(bound, "invoke")
+        assert not bound.__class__.__name__ == "CachedLLMProxy"
+
     def test_different_namespace_misses(self, tmp_path):
-        llm = _StubLLM()
+        llm_a = _StubLLM()
+        llm_b = _StubLLM()
         cache_a = DiskLLMCache(tmp_path / "a", "A:2026-07-15")
         cache_b = DiskLLMCache(tmp_path / "b", "B:2026-07-15")
-        CachedLLMProxy(llm, cache_a).invoke("prompt")
-        CachedLLMProxy(llm, cache_b).invoke("prompt")
-        assert llm.calls == 2
+        patch_llm_cache(llm_a, cache_a).invoke("prompt")
+        patch_llm_cache(llm_b, cache_b).invoke("prompt")
+        assert llm_a.calls == 1
+        assert llm_b.calls == 1

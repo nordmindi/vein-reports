@@ -74,42 +74,64 @@ class DiskLLMCache:
         return {"hits": self.hits, "misses": self.misses}
 
 
-class CachedLLMProxy:
-    """Transparent wrapper adding disk cache to LangChain chat models."""
+def _model_name(llm: Any) -> str:
+    for attr in ("model_name", "model"):
+        value = getattr(llm, attr, None)
+        if value:
+            return str(value)
+    bound = getattr(llm, "bound", None)
+    if bound is not None:
+        return _model_name(bound)
+    return "unknown"
 
-    def __init__(self, llm: Any, cache: DiskLLMCache | None):
-        self._llm = llm
-        self._cache = cache
 
-    @property
-    def model_name(self) -> str:
-        return getattr(self._llm, "model_name", getattr(self._llm, "model", "unknown"))
+def patch_llm_cache(llm: Any, cache: DiskLLMCache | None) -> Any:
+    """Patch invoke on LangChain Runnable LLMs without breaking Runnable typing.
 
-    def invoke(self, input_value, config=None, **kwargs):
-        if self._cache is None:
-            return self._llm.invoke(input_value, config, **kwargs)
-        key = self._cache.make_key(self.model_name, input_value)
-        cached = self._cache.get(key)
-        if cached is not None:
-            return cached
-        result = self._llm.invoke(input_value, config, **kwargs)
-        self._cache.put(key, result)
+    LangGraph chains such as ``prompt | llm.bind_tools(tools)`` require the LLM
+    (and bound variants) to remain LangChain Runnables. A plain proxy class is
+    rejected, so we patch ``invoke`` in place and wrap factory methods.
+    """
+    if cache is None or getattr(llm, "_vein_cache_patched", False):
+        return llm
+
+    original_invoke = llm.invoke
+
+    def cached_invoke(input_value, config=None, **kwargs):
+        key = cache.make_key(_model_name(llm), input_value)
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
+        result = original_invoke(input_value, config, **kwargs)
+        cache.put(key, result)
         return result
 
-    def bind_tools(self, tools, **kwargs):
-        bound = self._llm.bind_tools(tools, **kwargs)
-        return CachedLLMProxy(bound, self._cache)
+    llm.invoke = cached_invoke
 
-    def with_structured_output(self, schema, **kwargs):
-        structured = self._llm.with_structured_output(schema, **kwargs)
-        return CachedLLMProxy(structured, self._cache)
+    if hasattr(llm, "bind_tools"):
+        original_bind_tools = llm.bind_tools
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._llm, name)
+        def bind_tools_with_cache(tools, **kwargs):
+            bound = original_bind_tools(tools, **kwargs)
+            return patch_llm_cache(bound, cache)
+
+        llm.bind_tools = bind_tools_with_cache
+
+    if hasattr(llm, "with_structured_output"):
+        original_structured = llm.with_structured_output
+
+        def structured_with_cache(schema, **kwargs):
+            structured = original_structured(schema, **kwargs)
+            return patch_llm_cache(structured, cache)
+
+        llm.with_structured_output = structured_with_cache
+
+    llm._vein_cache_patched = True
+    return llm
 
 
 def wrap_llm_cache(llm: Any, cache_dir: Path, namespace: str, enabled: bool) -> Any:
     if not enabled:
         return llm
     cache = DiskLLMCache(cache_dir / "llm_responses", namespace)
-    return CachedLLMProxy(llm, cache)
+    return patch_llm_cache(llm, cache)

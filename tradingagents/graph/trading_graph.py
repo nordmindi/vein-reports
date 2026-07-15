@@ -33,7 +33,7 @@ from tradingagents.dataflows.config import set_config
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
-from tradingagents.llm_clients.llm_cache import CachedLLMProxy, DiskLLMCache
+from tradingagents.llm_clients.llm_cache import DiskLLMCache, patch_llm_cache
 from tradingagents.reporting import write_report_tree
 from tradingagents.validation import (
     check_market_data_freshness,
@@ -107,8 +107,8 @@ class TradingAgentsGraph:
             namespace = str(self.config.get("llm_cache_namespace") or "default")
             cache_dir = Path(self.config["data_cache_dir"]) / "llm_responses"
             self.llm_disk_cache = DiskLLMCache(cache_dir, namespace)
-            self.quick_thinking_llm = CachedLLMProxy(self.quick_thinking_llm, self.llm_disk_cache)
-            self.deep_thinking_llm = CachedLLMProxy(self.deep_thinking_llm, self.llm_disk_cache)
+            self.quick_thinking_llm = patch_llm_cache(self.quick_thinking_llm, self.llm_disk_cache)
+            self.deep_thinking_llm = patch_llm_cache(self.deep_thinking_llm, self.llm_disk_cache)
 
         self.memory_log = TradingMemoryLog(self.config)
 
