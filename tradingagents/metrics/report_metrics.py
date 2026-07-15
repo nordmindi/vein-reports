@@ -21,6 +21,7 @@ def build_report_metrics(
     config: dict[str, Any],
     duration_sec: float,
     selected_analysts: tuple[str, ...] | list[str],
+    llm_cache_stats: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     stats = handler.get_stats()
     by_model = stats.get("by_model") or {}
@@ -33,7 +34,7 @@ def build_report_metrics(
             "estimated_cost_usd": cost_by_model.get(model_name),
         }
 
-    return {
+    metrics: dict[str, Any] = {
         "version": REPORT_METRICS_VERSION,
         "job_id": job_id,
         "ticker": ticker,
@@ -65,6 +66,9 @@ def build_report_metrics(
             ),
         },
     }
+    if llm_cache_stats is not None:
+        metrics["llm_cache"] = llm_cache_stats
+    return metrics
 
 
 def write_report_metrics(report_dir: Path, metrics: dict[str, Any]) -> Path:

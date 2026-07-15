@@ -77,3 +77,4 @@ class AgentState(MessagesState):
     past_context: Annotated[str, "Memory log context injected at run start (same-ticker decisions + cross-ticker lessons)"]
     historical_lessons_evidence: Annotated[list[dict], "Validated historical lessons allowed for final decision support"]
     vein_context_bundle: Annotated[dict, "Vein supply-chain context bundle"]
+    debate_brief: Annotated[str, "Compressed analyst context for debate agents"]

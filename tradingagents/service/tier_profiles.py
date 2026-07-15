@@ -11,6 +11,8 @@ TIER_PROFILES: dict[str, dict[str, Any]] = {
         "global_news_article_limit": 5,
         "use_deep_research_manager": False,
         "use_deep_portfolio_manager": False,
+        "compress_debate_context": False,
+        "llm_cache_enabled": True,
     },
     "pro": {
         "pipeline_mode": "full",
@@ -19,6 +21,8 @@ TIER_PROFILES: dict[str, dict[str, Any]] = {
         "global_news_article_limit": 8,
         "use_deep_research_manager": False,
         "use_deep_portfolio_manager": True,
+        "compress_debate_context": True,
+        "llm_cache_enabled": True,
     },
     "team": {
         "pipeline_mode": "full",
@@ -27,6 +31,8 @@ TIER_PROFILES: dict[str, dict[str, Any]] = {
         "global_news_article_limit": 10,
         "use_deep_research_manager": False,
         "use_deep_portfolio_manager": True,
+        "compress_debate_context": True,
+        "llm_cache_enabled": True,
     },
 }
 

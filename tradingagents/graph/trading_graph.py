@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 import yfinance as yf
+from pathlib import Path
+
 from langgraph.prebuilt import ToolNode
 
 from tradingagents.agents.utils.agent_utils import (
@@ -31,6 +33,7 @@ from tradingagents.dataflows.config import set_config
 from tradingagents.dataflows.utils import safe_ticker_component
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.llm_clients import create_llm_client
+from tradingagents.llm_clients.llm_cache import CachedLLMProxy, DiskLLMCache
 from tradingagents.reporting import write_report_tree
 from tradingagents.validation import (
     check_market_data_freshness,
@@ -99,6 +102,13 @@ class TradingAgentsGraph:
 
         self.deep_thinking_llm = deep_client.get_llm()
         self.quick_thinking_llm = quick_client.get_llm()
+        self.llm_disk_cache = None
+        if self.config.get("llm_cache_enabled"):
+            namespace = str(self.config.get("llm_cache_namespace") or "default")
+            cache_dir = Path(self.config["data_cache_dir"]) / "llm_responses"
+            self.llm_disk_cache = DiskLLMCache(cache_dir, namespace)
+            self.quick_thinking_llm = CachedLLMProxy(self.quick_thinking_llm, self.llm_disk_cache)
+            self.deep_thinking_llm = CachedLLMProxy(self.deep_thinking_llm, self.llm_disk_cache)
 
         self.memory_log = TradingMemoryLog(self.config)
 
@@ -119,6 +129,7 @@ class TradingAgentsGraph:
             pipeline_mode=self.config.get("pipeline_mode", "full"),
             use_deep_research_manager=bool(self.config.get("use_deep_research_manager", True)),
             use_deep_portfolio_manager=bool(self.config.get("use_deep_portfolio_manager", True)),
+            compress_debate_context=bool(self.config.get("compress_debate_context", True)),
         )
 
         self.propagator = Propagator(

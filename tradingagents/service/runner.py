@@ -280,6 +280,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
     if context_bundle:
         config["vein_context_bundle"] = context_bundle
     config["golden_trend_signal"] = golden_trend_signal or {}
+    config["llm_cache_namespace"] = f"{ticker}:{request.analysis_date}"
 
     log_info("report_graph_init", jobId=job_id, analysts=list(request.selected_analysts))
     metrics_handler = ReportMetricsCallbackHandler()
@@ -354,6 +355,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
     log_info("report_pdf_generated", jobId=job_id, path=str(pdf_path))
 
     duration_sec = time.perf_counter() - propagation_started
+    cache_stats = graph.llm_disk_cache.stats() if graph.llm_disk_cache else None
     metrics = build_report_metrics(
         job_id=job_id,
         ticker=ticker,
@@ -362,6 +364,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         config=config,
         duration_sec=duration_sec,
         selected_analysts=request.selected_analysts,
+        llm_cache_stats=cache_stats,
     )
     write_report_metrics(report_dir, metrics)
     log_info(

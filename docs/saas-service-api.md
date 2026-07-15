@@ -201,6 +201,8 @@ All artifact endpoints require a completed job and `X-API-Key`.
 | `GET /v1/reports/{job_id}/evidence` | Download `decision_evidence_bundle.json`. | `409` |
 | `GET /v1/reports/{job_id}/metrics` | Download `cost_metrics.json` (LLM usage + cost estimate). | `409` |
 
+Pro/team jobs compress analyst output into a **Debate Brief** before bull/bear/risk agents (lower downstream token use). Repeat jobs for the same ticker+date may hit the **LLM response disk cache** (`llm_cache` stats in metrics).
+
 Completed jobs also include a `metrics` summary on `GET /v1/reports/{job_id}` and
 structured log fields on `report_job_completed` (`llmCalls`, `tokensIn`, `tokensOut`,
 `estimatedCostUsd`). This schema is **application-neutral** — any consuming service

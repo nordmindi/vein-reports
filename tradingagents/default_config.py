@@ -19,6 +19,7 @@ _ENV_OVERRIDES = {
     "TRADINGAGENTS_BENCHMARK_TICKER": "benchmark_ticker",
     "TRADINGAGENTS_TEMPERATURE": "temperature",
     "TRADINGAGENTS_STRICT_REPORT_VALIDATION": "strict_report_validation",
+    "TRADINGAGENTS_LLM_CACHE_ENABLED": "llm_cache_enabled",
     "TRADINGAGENTS_MARKET_DATA_MAX_COMPLETED_SESSIONS_OLD": (
         "market_data_max_completed_sessions_old"
     ),
@@ -126,6 +127,8 @@ DEFAULT_CONFIG = _apply_env_overrides({
     "pipeline_mode": "full",
     "use_deep_research_manager": True,
     "use_deep_portfolio_manager": True,
+    "compress_debate_context": True,
+    "llm_cache_enabled": False,
     # News / data fetching parameters
     # Increase for longer lookback strategies or to broaden macro coverage;
     # decrease to reduce token usage in agent prompts.

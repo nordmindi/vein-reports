@@ -21,6 +21,7 @@ from tradingagents.agents import (
     create_supply_chain_analyst,
     create_trader,
 )
+from tradingagents.agents.managers.debate_brief import create_debate_brief_agent
 from tradingagents.agents.managers.lite_decision import create_lite_decision_agent
 from tradingagents.agents.utils.agent_states import AgentState
 
@@ -41,6 +42,7 @@ class GraphSetup:
         pipeline_mode: str = "full",
         use_deep_research_manager: bool = True,
         use_deep_portfolio_manager: bool = True,
+        compress_debate_context: bool = True,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
@@ -50,6 +52,7 @@ class GraphSetup:
         self.pipeline_mode = pipeline_mode
         self.use_deep_research_manager = use_deep_research_manager
         self.use_deep_portfolio_manager = use_deep_portfolio_manager
+        self.compress_debate_context = compress_debate_context
 
     def setup_graph(
         self, selected_analysts=("market", "social", "news", "fundamentals")
@@ -87,6 +90,7 @@ class GraphSetup:
         )
         portfolio_manager_node = create_portfolio_manager(portfolio_manager_llm)
         lite_decision_node = create_lite_decision_agent(self.quick_thinking_llm)
+        debate_brief_node = create_debate_brief_agent(self.quick_thinking_llm)
 
         # Create workflow
         workflow = StateGraph(AgentState)
@@ -108,6 +112,7 @@ class GraphSetup:
         workflow.add_node("Conservative Analyst", conservative_analyst)
         workflow.add_node("Portfolio Manager", portfolio_manager_node)
         workflow.add_node("Lite Decision", lite_decision_node)
+        workflow.add_node("Debate Brief", debate_brief_node)
 
         # Define edges
         workflow.add_edge(START, plan.specs[0].agent_node)
@@ -133,12 +138,17 @@ class GraphSetup:
                 workflow.add_edge(current_clear, plan.specs[i + 1].agent_node)
             elif lite_pipeline:
                 workflow.add_edge(current_clear, "Lite Decision")
+            elif self.compress_debate_context:
+                workflow.add_edge(current_clear, "Debate Brief")
             else:
                 workflow.add_edge(current_clear, "Bull Researcher")
 
         if lite_pipeline:
             workflow.add_edge("Lite Decision", END)
             return workflow
+
+        if self.compress_debate_context:
+            workflow.add_edge("Debate Brief", "Bull Researcher")
 
         # Full pipeline: debate, trader, risk, portfolio manager
         workflow.add_conditional_edges(
