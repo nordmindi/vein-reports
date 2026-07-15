@@ -63,6 +63,11 @@ class TestPersistedJobStore:
             report_dir=report_dir,
             markdown_path=markdown_path,
             pdf_path=pdf_path,
+            metrics={
+                "version": "report-metrics-v1",
+                "usage": {"llm_calls": 5, "tool_calls": 2, "tokens_in": 1000, "tokens_out": 200},
+                "estimated_cost_usd": 0.12,
+            },
         )
         api._write_job_record(record)
         api.jobs.clear()
@@ -73,6 +78,8 @@ class TestPersistedJobStore:
         assert loaded.result is not None
         assert loaded.result.pdf_path == pdf_path
         assert loaded.result.decision == "INSUFFICIENT_EVIDENCE"
+        assert loaded.result.metrics is not None
+        assert loaded.result.metrics["usage"]["llm_calls"] == 5
 
 
 @pytest.mark.unit
@@ -88,6 +95,8 @@ class TestServiceApiContract:
         assert "/v1/reports/{job_id}/dashboard" in schema["paths"]
         assert "/v1/reports/{job_id}/validation" in schema["paths"]
         assert "/v1/reports/{job_id}/evidence" in schema["paths"]
+        assert "/v1/reports/{job_id}/metrics" in schema["paths"]
+        assert "ReportJobMetrics" in schema["components"]["schemas"]
         assert "/v1/report-validation-lite" in schema["paths"]
 
     def test_report_validation_lite_endpoint(self, monkeypatch):

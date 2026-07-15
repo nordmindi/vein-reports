@@ -256,21 +256,28 @@ class CreateReportResponse(BaseModel):
     dashboard_url: str
     validation_url: str
     evidence_url: str
+    metrics_url: str
 
 
-class ReportValidationLiteRequest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class ReportUsageMetrics(BaseModel):
+    llm_calls: int = 0
+    tool_calls: int = 0
+    tokens_in: int = 0
+    tokens_out: int = 0
 
-    symbol: str = Field(..., min_length=1, max_length=32)
-    strategy: str | None = None
-    rawSignal: str | None = None
-    finalSignal: str | None = None
-    tradeAllowed: bool | None = None
-    confidenceScore: int | None = None
-    confidenceGrade: str | None = None
-    topBlockers: list[str] = Field(default_factory=list)
-    watchlistConditions: list[Any] = Field(default_factory=list)
-    supplyChainContext: dict[str, Any] | None = None
+
+class ReportJobMetrics(BaseModel):
+    """Generic per-job LLM usage and cost estimate for any consuming application."""
+
+    version: str = Field(default="report-metrics-v1")
+    duration_sec: float | None = None
+    llm_provider: str | None = None
+    models_configured: dict[str, str | None] | None = None
+    selected_analysts: list[str] = Field(default_factory=list)
+    usage: ReportUsageMetrics | None = None
+    estimated_cost_usd: float | None = None
+    by_model: dict[str, Any] | None = None
+    cost_estimation: dict[str, Any] | None = None
 
 
 class ReportJobResponse(BaseModel):
@@ -287,6 +294,23 @@ class ReportJobResponse(BaseModel):
     dashboard_url: str | None = None
     validation_url: str | None = None
     evidence_url: str | None = None
+    metrics_url: str | None = None
+    metrics: ReportJobMetrics | None = None
+
+
+class ReportValidationLiteRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    symbol: str = Field(..., min_length=1, max_length=32)
+    strategy: str | None = None
+    rawSignal: str | None = None
+    finalSignal: str | None = None
+    tradeAllowed: bool | None = None
+    confidenceScore: int | None = None
+    confidenceGrade: str | None = None
+    topBlockers: list[str] = Field(default_factory=list)
+    watchlistConditions: list[Any] = Field(default_factory=list)
+    supplyChainContext: dict[str, Any] | None = None
 
 
 class JobRecord:
@@ -447,6 +471,7 @@ def _result_payload(result: ReportResult | None) -> dict[str, Any] | None:
         "report_dir": str(result.report_dir),
         "markdown_path": str(result.markdown_path),
         "pdf_path": str(result.pdf_path),
+        "metrics": result.metrics,
     }
 
 
@@ -461,6 +486,35 @@ def _load_result(payload: dict[str, Any] | None) -> ReportResult | None:
         report_dir=Path(payload["report_dir"]),
         markdown_path=Path(payload["markdown_path"]),
         pdf_path=Path(payload["pdf_path"]),
+        metrics=payload.get("metrics"),
+    )
+
+
+def _resolve_job_metrics(record: JobRecord) -> dict[str, Any] | None:
+    if record.result and record.result.metrics:
+        return record.result.metrics
+    if record.result is None:
+        return None
+    from tradingagents.metrics.report_metrics import read_report_metrics
+
+    return read_report_metrics(record.result.report_dir)
+
+
+def _metrics_response(record: JobRecord) -> ReportJobMetrics | None:
+    raw = _resolve_job_metrics(record)
+    if not raw:
+        return None
+    usage = raw.get("usage") or {}
+    return ReportJobMetrics(
+        version=raw.get("version", "report-metrics-v1"),
+        duration_sec=raw.get("duration_sec"),
+        llm_provider=raw.get("llm_provider"),
+        models_configured=raw.get("models_configured"),
+        selected_analysts=raw.get("selected_analysts") or [],
+        usage=ReportUsageMetrics(**usage) if usage else None,
+        estimated_cost_usd=raw.get("estimated_cost_usd"),
+        by_model=raw.get("by_model"),
+        cost_estimation=raw.get("cost_estimation"),
     )
 
 
@@ -523,6 +577,11 @@ def _execute_job(record: JobRecord) -> ReportResult:
             jobId=record.job_id,
             durationSec=round(duration, 2),
             decision=record.result.decision,
+            llmCalls=(record.result.metrics or {}).get("usage", {}).get("llm_calls"),
+            toolCalls=(record.result.metrics or {}).get("usage", {}).get("tool_calls"),
+            tokensIn=(record.result.metrics or {}).get("usage", {}).get("tokens_in"),
+            tokensOut=(record.result.metrics or {}).get("usage", {}).get("tokens_out"),
+            estimatedCostUsd=(record.result.metrics or {}).get("estimated_cost_usd"),
         )
         return record.result
     except Exception as exc:
@@ -686,6 +745,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         dashboard_url=_report_url(job_id, "dashboard"),
         validation_url=_report_url(job_id, "validation"),
         evidence_url=_report_url(job_id, "evidence"),
+        metrics_url=_report_url(job_id, "metrics"),
     )
 
 
@@ -697,6 +757,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
 def get_report(job_id: str) -> ReportJobResponse:
     record = _get_job(job_id)
     result = record.result
+    metrics = _metrics_response(record) if result else None
 
     return ReportJobResponse(
         job_id=record.job_id,
@@ -712,6 +773,8 @@ def get_report(job_id: str) -> ReportJobResponse:
         dashboard_url=_report_url(job_id, "dashboard") if result else None,
         validation_url=_report_url(job_id, "validation") if result else None,
         evidence_url=_report_url(job_id, "evidence") if result else None,
+        metrics_url=_report_url(job_id, "metrics") if result else None,
+        metrics=metrics,
     )
 
 
@@ -757,6 +820,16 @@ def download_report_json(job_id: str) -> dict:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to read report data",
         ) from e
+
+
+@app.get(
+    "/v1/reports/{job_id}/metrics",
+    dependencies=[Depends(require_service_key)],
+    summary="Download per-job LLM usage and cost estimate",
+)
+def download_report_metrics(job_id: str) -> dict[str, Any]:
+    """Return cost_metrics.json — generic usage metrics for any consuming application."""
+    return _read_completed_artifact(job_id, "cost_metrics.json")
 
 
 @app.get(

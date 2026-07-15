@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,11 @@ from dotenv import load_dotenv
 
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
+from tradingagents.metrics import (
+    ReportMetricsCallbackHandler,
+    build_report_metrics,
+    write_report_metrics,
+)
 from tradingagents.reporting import (
     finalize_validation_artifacts,
     generate_pdf_from_markdown,
@@ -55,6 +61,7 @@ class ReportResult:
     report_dir: Path
     markdown_path: Path
     pdf_path: Path
+    metrics: dict[str, Any] | None = None
 
 
 def validate_report_request(request: ReportRequest) -> None:
@@ -268,10 +275,12 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
     config["golden_trend_signal"] = golden_trend_signal or {}
 
     log_info("report_graph_init", jobId=job_id, analysts=list(request.selected_analysts))
+    metrics_handler = ReportMetricsCallbackHandler()
     graph = TradingAgentsGraph(
         selected_analysts=list(request.selected_analysts),
         debug=False,
         config=config,
+        callbacks=[metrics_handler],
     )
 
     log_info(
@@ -280,6 +289,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         ticker=ticker,
         analysisDate=request.analysis_date,
     )
+    propagation_started = time.perf_counter()
     try:
         final_state, decision = graph.propagate(ticker, request.analysis_date)
         log_info("report_propagation_completed", jobId=job_id, decision=decision)
@@ -336,6 +346,28 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
     )
     log_info("report_pdf_generated", jobId=job_id, path=str(pdf_path))
 
+    duration_sec = time.perf_counter() - propagation_started
+    metrics = build_report_metrics(
+        job_id=job_id,
+        ticker=ticker,
+        analysis_date=request.analysis_date,
+        handler=metrics_handler,
+        config=config,
+        duration_sec=duration_sec,
+        selected_analysts=request.selected_analysts,
+    )
+    write_report_metrics(report_dir, metrics)
+    log_info(
+        "report_metrics_recorded",
+        jobId=job_id,
+        llmCalls=metrics["usage"]["llm_calls"],
+        toolCalls=metrics["usage"]["tool_calls"],
+        tokensIn=metrics["usage"]["tokens_in"],
+        tokensOut=metrics["usage"]["tokens_out"],
+        estimatedCostUsd=metrics.get("estimated_cost_usd"),
+        durationSec=metrics["duration_sec"],
+    )
+
     return ReportResult(
         job_id=job_id,
         ticker=ticker,
@@ -344,5 +376,6 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         report_dir=report_dir,
         markdown_path=markdown_path,
         pdf_path=pdf_path,
+        metrics=metrics,
     )
 

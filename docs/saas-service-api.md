@@ -199,6 +199,15 @@ All artifact endpoints require a completed job and `X-API-Key`.
 | `GET /v1/reports/{job_id}/dashboard` | Download `dashboard.json`. | `409` |
 | `GET /v1/reports/{job_id}/validation` | Download `validation_report.json`. | `409` |
 | `GET /v1/reports/{job_id}/evidence` | Download `decision_evidence_bundle.json`. | `409` |
+| `GET /v1/reports/{job_id}/metrics` | Download `cost_metrics.json` (LLM usage + cost estimate). | `409` |
+
+Completed jobs also include a `metrics` summary on `GET /v1/reports/{job_id}` and
+structured log fields on `report_job_completed` (`llmCalls`, `tokensIn`, `tokensOut`,
+`estimatedCostUsd`). This schema is **application-neutral** — any consuming service
+(Vein Explorer, Golden Trend, etc.) can ingest it for billing dashboards.
+
+`cost_metrics.json` uses version `report-metrics-v1`. Override model pricing via
+`TRADINGAGENTS_MODEL_PRICING_JSON` when your deployment uses custom rates.
 
 The dashboard artifact is the canonical public summary for downstream apps. If
 validation blocks transaction authority, it publishes:
