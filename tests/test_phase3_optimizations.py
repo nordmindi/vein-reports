@@ -1,5 +1,6 @@
 import pytest
 from langchain_core.messages import AIMessage
+from pydantic import BaseModel, ConfigDict
 
 from tradingagents.agents.utils.debate_context import (
     collect_analyst_reports_for_brief,
@@ -89,3 +90,20 @@ class TestLLMCache:
         patch_llm_cache(llm_b, cache_b).invoke("prompt")
         assert llm_a.calls == 1
         assert llm_b.calls == 1
+
+    def test_patch_works_on_pydantic_model(self, tmp_path):
+        class PydanticStubLLM(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            model_name: str = "pydantic-stub"
+            calls: int = 0
+
+            def invoke(self, input_value, config=None, **kwargs):
+                self.calls += 1
+                return AIMessage(content=str(input_value))
+
+        cache = DiskLLMCache(tmp_path, "TSLA:2026-07-15")
+        llm = patch_llm_cache(PydanticStubLLM(), cache)
+        llm.invoke("hello")
+        llm.invoke("hello")
+        assert llm.calls == 1
+        assert cache.stats()["hits"] == 1

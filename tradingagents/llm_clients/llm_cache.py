@@ -85,12 +85,21 @@ def _model_name(llm: Any) -> str:
     return "unknown"
 
 
+def _safe_setattr(obj: Any, name: str, value: Any) -> None:
+    """Set attributes on Pydantic-based LangChain chat models."""
+    try:
+        setattr(obj, name, value)
+    except (ValueError, TypeError):
+        object.__setattr__(obj, name, value)
+
+
 def patch_llm_cache(llm: Any, cache: DiskLLMCache | None) -> Any:
     """Patch invoke on LangChain Runnable LLMs without breaking Runnable typing.
 
     LangGraph chains such as ``prompt | llm.bind_tools(tools)`` require the LLM
-    (and bound variants) to remain LangChain Runnables. A plain proxy class is
-    rejected, so we patch ``invoke`` in place and wrap factory methods.
+    (and bound variants) to remain LangChain Runnables. We patch ``invoke`` in
+    place using ``object.__setattr__`` so Pydantic chat models (e.g.
+    NormalizedChatOpenAI) accept the override.
     """
     if cache is None or getattr(llm, "_vein_cache_patched", False):
         return llm
@@ -106,7 +115,7 @@ def patch_llm_cache(llm: Any, cache: DiskLLMCache | None) -> Any:
         cache.put(key, result)
         return result
 
-    llm.invoke = cached_invoke
+    _safe_setattr(llm, "invoke", cached_invoke)
 
     if hasattr(llm, "bind_tools"):
         original_bind_tools = llm.bind_tools
@@ -115,7 +124,7 @@ def patch_llm_cache(llm: Any, cache: DiskLLMCache | None) -> Any:
             bound = original_bind_tools(tools, **kwargs)
             return patch_llm_cache(bound, cache)
 
-        llm.bind_tools = bind_tools_with_cache
+        _safe_setattr(llm, "bind_tools", bind_tools_with_cache)
 
     if hasattr(llm, "with_structured_output"):
         original_structured = llm.with_structured_output
@@ -124,9 +133,9 @@ def patch_llm_cache(llm: Any, cache: DiskLLMCache | None) -> Any:
             structured = original_structured(schema, **kwargs)
             return patch_llm_cache(structured, cache)
 
-        llm.with_structured_output = structured_with_cache
+        _safe_setattr(llm, "with_structured_output", structured_with_cache)
 
-    llm._vein_cache_patched = True
+    _safe_setattr(llm, "_vein_cache_patched", True)
     return llm
 
 
