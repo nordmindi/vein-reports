@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import traceback
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
 from typing import Any, Iterator
+
+_REPORT_JOB_PATH_RE = re.compile(r"^/v1/reports/([^/]+)")
 
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
 _correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
@@ -136,3 +139,11 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def job_id_from_request_path(path: str) -> str | None:
+    """Extract a report job id from `/v1/reports/{job_id}` and sub-resource paths."""
+    match = _REPORT_JOB_PATH_RE.match(path)
+    if not match:
+        return None
+    return _optional_str(match.group(1))

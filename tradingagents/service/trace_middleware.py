@@ -9,7 +9,13 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from tradingagents.service.trace_logging import bind_trace, log_exception, log_info, reset_trace
+from tradingagents.service.trace_logging import (
+    bind_trace,
+    job_id_from_request_path,
+    log_exception,
+    log_info,
+    reset_trace,
+)
 
 
 class TraceMiddleware(BaseHTTPMiddleware):
@@ -23,6 +29,7 @@ class TraceMiddleware(BaseHTTPMiddleware):
             correlation_id=correlation_id,
             service="vein-reports",
             span=f"http.{method}.{path}",
+            job_id=job_id_from_request_path(path),
         )
         started = time.perf_counter()
         log_info("http_request_started", method=method, path=path)
