@@ -130,6 +130,7 @@ class TradingAgentsGraph:
             use_deep_research_manager=bool(self.config.get("use_deep_research_manager", True)),
             use_deep_portfolio_manager=bool(self.config.get("use_deep_portfolio_manager", True)),
             compress_debate_context=bool(self.config.get("compress_debate_context", True)),
+            max_tool_rounds_per_analyst=self.config.get("max_tool_rounds_per_analyst"),
         )
 
         self.propagator = Propagator(

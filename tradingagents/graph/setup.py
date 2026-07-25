@@ -43,6 +43,7 @@ class GraphSetup:
         use_deep_research_manager: bool = True,
         use_deep_portfolio_manager: bool = True,
         compress_debate_context: bool = True,
+        max_tool_rounds_per_analyst: int | None = None,
     ):
         """Initialize with required components."""
         self.quick_thinking_llm = quick_thinking_llm
@@ -53,6 +54,7 @@ class GraphSetup:
         self.use_deep_research_manager = use_deep_research_manager
         self.use_deep_portfolio_manager = use_deep_portfolio_manager
         self.compress_debate_context = compress_debate_context
+        self.max_tool_rounds_per_analyst = max_tool_rounds_per_analyst
 
     def setup_graph(
         self, selected_analysts=("market", "social", "news", "fundamentals")
@@ -60,11 +62,18 @@ class GraphSetup:
         """Set up and compile the agent workflow graph."""
         plan = build_analyst_execution_plan(selected_analysts)
 
+        tool_cap = self.max_tool_rounds_per_analyst
         analyst_factories = {
-            "market": lambda: create_market_analyst(self.quick_thinking_llm),
+            "market": lambda: create_market_analyst(
+                self.quick_thinking_llm, max_tool_rounds=tool_cap
+            ),
             "social": lambda: create_sentiment_analyst(self.quick_thinking_llm),
-            "news": lambda: create_news_analyst(self.quick_thinking_llm),
-            "fundamentals": lambda: create_fundamentals_analyst(self.quick_thinking_llm),
+            "news": lambda: create_news_analyst(
+                self.quick_thinking_llm, max_tool_rounds=tool_cap
+            ),
+            "fundamentals": lambda: create_fundamentals_analyst(
+                self.quick_thinking_llm, max_tool_rounds=tool_cap
+            ),
             "supply_chain": lambda: create_supply_chain_analyst(self.quick_thinking_llm),
         }
 

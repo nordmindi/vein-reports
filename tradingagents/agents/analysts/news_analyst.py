@@ -8,9 +8,10 @@ from tradingagents.agents.utils.agent_utils import (
     get_news,
     get_prediction_markets,
 )
+from tradingagents.agents.utils.analyst_invocation import invoke_analyst_with_tools
 
 
-def create_news_analyst(llm):
+def create_news_analyst(llm, max_tool_rounds: int | None = None):
     def news_analyst_node(state):
         current_date = state["trade_date"]
         asset_type = state.get("asset_type", "stock")
@@ -53,17 +54,13 @@ def create_news_analyst(llm):
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(instrument_context=instrument_context)
 
-        chain = prompt | llm.bind_tools(tools)
-        result = chain.invoke(state["messages"])
-
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            report = result.content
-
-        return {
-            "messages": [result],
-            "news_report": report,
-        }
+        return invoke_analyst_with_tools(
+            llm=llm,
+            prompt=prompt,
+            tools=tools,
+            messages=state["messages"],
+            max_tool_rounds=max_tool_rounds,
+            report_key="news_report",
+        )
 
     return news_analyst_node

@@ -8,9 +8,10 @@ from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
 )
+from tradingagents.agents.utils.analyst_invocation import invoke_analyst_with_tools
 
 
-def create_fundamentals_analyst(llm):
+def create_fundamentals_analyst(llm, max_tool_rounds: int | None = None):
     def fundamentals_analyst_node(state):
         current_date = state["trade_date"]
         instrument_context = get_instrument_context_from_state(state)
@@ -52,18 +53,13 @@ def create_fundamentals_analyst(llm):
         prompt = prompt.partial(current_date=current_date)
         prompt = prompt.partial(instrument_context=instrument_context)
 
-        chain = prompt | llm.bind_tools(tools)
-
-        result = chain.invoke(state["messages"])
-
-        report = ""
-
-        if len(result.tool_calls) == 0:
-            report = result.content
-
-        return {
-            "messages": [result],
-            "fundamentals_report": report,
-        }
+        return invoke_analyst_with_tools(
+            llm=llm,
+            prompt=prompt,
+            tools=tools,
+            messages=state["messages"],
+            max_tool_rounds=max_tool_rounds,
+            report_key="fundamentals_report",
+        )
 
     return fundamentals_analyst_node
