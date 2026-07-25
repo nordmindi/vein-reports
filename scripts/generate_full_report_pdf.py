@@ -196,6 +196,8 @@ class MarkdownPDFGenerator:
         text = sanitize_agent_report_text(text)
         text = "".join(c for c in str(text) if ord(c) < 256)
         text = text.replace("**", "")
+        # Strip leftover markdown heading markers if a line fell through as body text.
+        text = re.sub(r"^#{1,6}\s+", "", text)
         text = display_text(text)
         return re.sub(r"\s{3,}", " ", text).strip()
 
@@ -297,12 +299,17 @@ class MarkdownPDFGenerator:
                 table_rows = []
 
             self.pdf.set_x(self.pdf.l_margin_val)
-            if raw_line.startswith("# "):
-                self._render_h1(line[2:])
-            elif raw_line.startswith("## "):
-                self._render_h2(line[3:])
-            elif raw_line.startswith("### "):
-                self._render_h3(line[4:])
+            heading = re.match(r"^(#{1,6})\s+(.*)$", raw_line)
+            if heading:
+                level = len(heading.group(1))
+                title = self._clean_line(heading.group(2))
+                if level == 1:
+                    self._render_h1(title)
+                elif level == 2:
+                    self._render_h2(title)
+                else:
+                    # ### and deeper (incl. supply-chain #### subsections)
+                    self._render_h3(title)
             elif raw_line.startswith("- ") or raw_line.startswith("* "):
                 self._render_bullet(line[2:])
             else:
