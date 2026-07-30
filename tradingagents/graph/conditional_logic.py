@@ -35,9 +35,11 @@ class ConditionalLogic:
         messages = state["messages"]
         last_message = messages[-1]
         if last_message.tool_calls:
-            if self.max_tool_rounds_per_analyst is not None:
-                if _count_tool_call_rounds(messages) >= self.max_tool_rounds_per_analyst:
-                    return clear_label
+            if (
+                self.max_tool_rounds_per_analyst is not None
+                and _count_tool_call_rounds(messages) >= self.max_tool_rounds_per_analyst
+            ):
+                return clear_label
             return tools_label
         return clear_label
 

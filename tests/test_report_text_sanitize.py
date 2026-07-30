@@ -2,7 +2,6 @@ import pytest
 
 from tradingagents.agents.utils.report_text import sanitize_agent_report_text
 
-
 BEAR_WITH_TOOL_CALL = """Bear Analyst: I'll gather the necessary data to build a comprehensive bear case for Sumco Corporation (3436.T). Let
 me start by collecting relevant information about the company, its financial performance, and the semiconductor
 industry landscape.

@@ -79,7 +79,7 @@ class TestLLMCache:
         llm = patch_llm_cache(_StubLLM(), cache)
         bound = llm.bind_tools([])
         assert hasattr(bound, "invoke")
-        assert not bound.__class__.__name__ == "CachedLLMProxy"
+        assert bound.__class__.__name__ != "CachedLLMProxy"
 
     def test_different_namespace_misses(self, tmp_path):
         llm_a = _StubLLM()

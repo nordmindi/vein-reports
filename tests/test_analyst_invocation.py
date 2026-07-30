@@ -23,7 +23,6 @@ class _ToolCallingLLM:
 
     def bind_tools(self, tools):
         self.bind_calls += 1
-        parent = self
 
         class _Bound:
             def invoke(self, messages):
@@ -48,8 +47,6 @@ class _ToolCallingLLM:
 
 class _PassthroughLLM:
     def bind_tools(self, tools):
-        parent = self
-
         class _Bound:
             def invoke(self, messages):
                 return AIMessage(content="Completed without more tools.")

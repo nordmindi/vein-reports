@@ -26,7 +26,6 @@ from tradingagents.reporting import (
     write_decision_evidence_report,
     write_validation_report,
 )
-
 from tradingagents.service.tier_profiles import apply_tier_profile
 from tradingagents.service.trace_logging import log_error, log_exception, log_info
 

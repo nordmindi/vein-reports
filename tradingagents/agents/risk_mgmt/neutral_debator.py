@@ -2,8 +2,6 @@ from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
 )
-
-
 from tradingagents.agents.utils.debate_context import format_debate_analyst_context
 
 

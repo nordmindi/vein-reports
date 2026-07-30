@@ -6,10 +6,11 @@ import json
 import re
 import sys
 import traceback
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
-from typing import Any, Iterator
+from typing import Any
 
 _REPORT_JOB_PATH_RE = re.compile(r"^/v1/reports/([^/]+)")
 

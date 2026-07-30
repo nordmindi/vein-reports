@@ -820,7 +820,7 @@ def download_report_json(job_id: str) -> dict:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to read report data",
-        ) from e
+        ) from exc
 
 
 @app.get(
