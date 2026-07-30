@@ -11,6 +11,14 @@ import pytest
 
 from tradingagents.dataflows import reddit
 
+
+@pytest.fixture(autouse=True)
+def _reset_reddit_state():
+    reddit.clear_reddit_cache()
+    yield
+    reddit.clear_reddit_cache()
+
+
 _SAMPLE_ATOM = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
   <entry>
@@ -123,21 +131,34 @@ class TestJsonPathFallsBackToRss:
 
 @pytest.mark.unit
 class TestRss429Backoff:
-    def test_429_then_success_retries_once(self):
+    def test_429_then_success_retries(self):
         err = HTTPError("url", 429, "Too Many Requests", {}, None)
         with patch.object(reddit, "urlopen", side_effect=[err, _atom_resp()]) as op, \
              patch.object(reddit.time, "sleep") as slept:
             posts = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        assert op.call_count == 2          # original + exactly one retry
-        slept.assert_called_once()         # backed off before retrying
+        assert op.call_count == 2
+        assert slept.call_count >= 1
         assert len(posts) == 2
 
-    def test_429_twice_gives_up_after_one_retry(self):
+    def test_429_exhausts_retries_then_tries_alternate_host(self):
         err = HTTPError("url", 429, "Too Many Requests", {}, None)
-        with patch.object(reddit, "urlopen", side_effect=[err, err]) as op, \
+        # www: initial + 3 retries = 4 failures; old.reddit: success
+        with patch.object(
+            reddit,
+            "urlopen",
+            side_effect=[err, err, err, err, _atom_resp()],
+        ) as op, patch.object(reddit.time, "sleep"):
+            posts = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0, max_retries=3)
+        assert op.call_count == 5
+        assert len(posts) == 2
+
+    def test_429_all_hosts_exhausted_returns_empty(self):
+        err = HTTPError("url", 429, "Too Many Requests", {}, None)
+        with patch.object(reddit, "urlopen", side_effect=err) as op, \
              patch.object(reddit.time, "sleep"):
-            posts = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        assert op.call_count == 2          # one retry, then gives up cleanly
+            posts = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0, max_retries=1)
+        # www: 2 attempts, old: 2 attempts
+        assert op.call_count == 4
         assert posts == []
 
     def test_retry_after_header_is_honoured(self):
@@ -145,7 +166,30 @@ class TestRss429Backoff:
         with patch.object(reddit, "urlopen", side_effect=[err, _atom_resp()]), \
              patch.object(reddit.time, "sleep") as slept:
             reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
-        slept.assert_called_once_with(12.0)
+        assert any(call.args == (12.0,) for call in slept.call_args_list)
+
+
+@pytest.mark.unit
+class TestRedditCacheAndCooldown:
+    def test_successful_fetch_is_cached(self):
+        with patch.object(reddit, "urlopen", return_value=_atom_resp()) as op:
+            first = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
+            second = reddit._fetch_subreddit_rss("NVDA", "stocks", 5, 5.0)
+        assert op.call_count == 1
+        assert first == second
+
+    def test_fetch_reddit_posts_reports_rate_limit_placeholder(self):
+        def _empty_and_mark(*_a, **_k):
+            reddit._last_fetch_rate_limited = True
+            return []
+
+        with patch.object(reddit, "_fetch_subreddit", side_effect=_empty_and_mark), \
+             patch.object(reddit.time, "sleep"):
+            out = reddit.fetch_reddit_posts(
+                "NVDA", subreddits=("stocks",), inter_request_delay=0,
+            )
+        assert "rate-limited" in out.lower() or "rate limiting" in out.lower()
+
 
 
 @pytest.mark.unit
