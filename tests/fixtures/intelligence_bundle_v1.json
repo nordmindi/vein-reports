@@ -1,0 +1,81 @@
+{
+  "version": "vein-intelligence-v1",
+  "primary_symbol": "NVDA",
+  "window": { "start": "2026-07-24", "end": "2026-07-31" },
+  "news": {
+    "primary": [
+      {
+        "id": "abc123",
+        "title": "NVIDIA AI demand remains strong",
+        "summary": "Cloud providers continue capex.",
+        "url": "https://example.com/nvda",
+        "published_at": "2026-07-30T12:00:00",
+        "source": "yfinance",
+        "symbols": ["NVDA"],
+        "source_type": "news_vendor"
+      }
+    ],
+    "peers": [],
+    "global": []
+  },
+  "social": {
+    "stocktwits": [
+      {
+        "id": "st1",
+        "body": "NVDA looking bullish into earnings",
+        "sentiment_tag": "Bullish",
+        "created_at": "2026-07-30T10:00:00Z",
+        "user": "trader1"
+      }
+    ],
+    "reddit": [],
+    "stocktwits_summary": "Bullish: 1 (100%)",
+    "reddit_summary": "<no Reddit posts>"
+  },
+  "macro": { "indicators": [] },
+  "prediction_markets": { "markets": [], "topic": "macro" },
+  "retrieval": {
+    "status": "ok",
+    "sources_used": ["yfinance", "stocktwits"],
+    "peer_fallback_applied": false,
+    "peer_tickers_queried": [],
+    "warnings": [],
+    "sections": {
+      "news": {
+        "status": "ok",
+        "sources_used": ["yfinance"],
+        "warnings": [],
+        "item_count": 1
+      },
+      "social": {
+        "status": "ok",
+        "sources_used": ["stocktwits"],
+        "warnings": [],
+        "item_count": 1
+      },
+      "macro": {
+        "status": "empty",
+        "sources_used": [],
+        "warnings": [],
+        "item_count": 0
+      },
+      "prediction_markets": {
+        "status": "empty",
+        "sources_used": [],
+        "warnings": [],
+        "item_count": 0
+      }
+    },
+    "news_retrieval": {
+      "ticker": "NVDA",
+      "start_date": "2026-07-24",
+      "end_date": "2026-07-31",
+      "status": "NEWS_VENDOR_SUCCESS",
+      "vendor_results_count": 1,
+      "peer_fallback_attempted": false,
+      "peer_results_count": 0,
+      "peer_tickers_queried": []
+    }
+  },
+  "generated_at": "2026-07-31T15:00:00Z"
+}

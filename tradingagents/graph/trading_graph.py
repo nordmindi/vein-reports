@@ -38,6 +38,7 @@ from tradingagents.validation import (
     check_news_retrieval,
     resolve_instrument,
 )
+from tradingagents.validation.build_technical_validation import attach_technical_validation
 
 from .checkpointer import checkpoint_step, clear_checkpoint, get_checkpointer, thread_id
 from .conditional_logic import ConditionalLogic
@@ -389,6 +390,8 @@ class TradingAgentsGraph:
             historical_lessons_evidence=validated_lessons,
             instrument_context=instrument_context,
             vein_context_bundle=self.config.get("vein_context_bundle") or {},
+            vein_intelligence_bundle=self.config.get("vein_intelligence_bundle") or {},
+            vein_intelligence_briefs=self.config.get("vein_intelligence_briefs") or {},
         )
         args = self.propagator.get_graph_args(callbacks=self.callbacks or None)
 
@@ -457,7 +460,19 @@ class TradingAgentsGraph:
 
         final_state["instrument_resolution"] = instrument_resolution.model_dump(mode="json")
         final_state["market_data_freshness"] = market_data_freshness.model_dump(mode="json")
-        final_state["news_retrieval"] = check_news_retrieval(
+        final_state["news_retrieval"] = self._resolve_news_retrieval(
+            company_name,
+            trade_date,
+        )
+        attach_technical_validation(final_state, company_name, trade_date)
+
+    def _resolve_news_retrieval(self, company_name: str, trade_date: str) -> dict:
+        bundle = self.config.get("vein_intelligence_bundle")
+        if isinstance(bundle, dict):
+            retrieval = bundle.get("retrieval")
+            if isinstance(retrieval, dict) and retrieval.get("news_retrieval"):
+                return retrieval["news_retrieval"]
+        return check_news_retrieval(
             company_name,
             trade_date,
             trade_date,
@@ -500,6 +515,7 @@ class TradingAgentsGraph:
             "instrument_resolution": final_state.get("instrument_resolution"),
             "market_data_freshness": final_state.get("market_data_freshness"),
             "news_retrieval": final_state.get("news_retrieval"),
+            "technical_validation": final_state.get("technical_validation"),
             "decision_evidence_bundle": final_state.get("decision_evidence_bundle"),
         }
 
@@ -522,6 +538,7 @@ class TradingAgentsGraph:
         validation_result=None,
         dashboard_model=None,
         expected_analysts=None,
+        user_requested_full_report: bool = False,
     ) -> Path:
         """Write the markdown report tree for a completed run, like the CLI does."""
         if save_path is None:
@@ -539,6 +556,7 @@ class TradingAgentsGraph:
             dashboard_model=dashboard_model,
             expected_analysts=expected_analysts,
             strict_validation=bool((getattr(self, "config", None) or {}).get("strict_report_validation")),
+            user_requested_full_report=user_requested_full_report,
         )
     def process_signal(self, full_signal):
         """Process a signal to extract the core decision."""

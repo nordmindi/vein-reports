@@ -24,6 +24,8 @@ class Propagator:
         historical_lessons_evidence: list[dict] | None = None,
         instrument_context: str = "",
         vein_context_bundle: dict | None = None,
+        vein_intelligence_bundle: dict | None = None,
+        vein_intelligence_briefs: dict | None = None,
     ) -> dict[str, Any]:
         """Create the initial state for the agent graph."""
         return {
@@ -35,6 +37,8 @@ class Propagator:
             "past_context": past_context,
             "historical_lessons_evidence": historical_lessons_evidence or [],
             "vein_context_bundle": vein_context_bundle or {},
+            "vein_intelligence_bundle": vein_intelligence_bundle or {},
+            "vein_intelligence_briefs": vein_intelligence_briefs or {},
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",

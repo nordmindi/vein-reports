@@ -34,6 +34,7 @@ from tradingagents.agents.utils.agent_utils import (
     get_instrument_context_from_state,
     get_language_instruction,
     get_news,
+    get_non_authoritative_analyst_instruction,
 )
 from tradingagents.agents.utils.structured import (
     bind_structured,
@@ -41,6 +42,14 @@ from tradingagents.agents.utils.structured import (
 )
 from tradingagents.dataflows.reddit import fetch_reddit_posts
 from tradingagents.dataflows.stocktwits import fetch_stocktwits_messages
+from tradingagents.integrations.intelligence_bundle_format import (
+    format_news_block,
+    format_reddit_block,
+    format_retrieval_quality_note,
+    format_sentiment_brief_header,
+    format_stocktwits_block,
+    has_intelligence_bundle,
+)
 
 
 def _seven_days_back(trade_date: str) -> str:
@@ -63,12 +72,21 @@ def create_sentiment_analyst(llm):
         start_date = _seven_days_back(end_date)
         instrument_context = get_instrument_context_from_state(state)
 
-        # Pre-fetch all three sources. Each fetcher degrades gracefully and
-        # returns a string (no exceptions surface from here), so the LLM
-        # always sees something — either real data or a clear placeholder.
-        news_block = get_news.func(ticker, start_date, end_date)
-        stocktwits_block = fetch_stocktwits_messages(ticker, limit=30)
-        reddit_block = fetch_reddit_posts(ticker)
+        # Pre-fetch all three sources unless Vein Aggregator already supplied them.
+        brief_header = ""
+        quality_note = ""
+        if has_intelligence_bundle(state):
+            bundle = state["vein_intelligence_bundle"]
+            briefs = state.get("vein_intelligence_briefs")
+            brief_header = format_sentiment_brief_header(briefs)
+            quality_note = format_retrieval_quality_note(bundle)
+            news_block = format_news_block(bundle, ticker)
+            stocktwits_block = format_stocktwits_block(bundle)
+            reddit_block = format_reddit_block(bundle)
+        else:
+            news_block = get_news.func(ticker, start_date, end_date)
+            stocktwits_block = fetch_stocktwits_messages(ticker, limit=30)
+            reddit_block = fetch_reddit_posts(ticker)
 
         system_message = _build_system_message(
             ticker=ticker,
@@ -77,6 +95,8 @@ def create_sentiment_analyst(llm):
             news_block=news_block,
             stocktwits_block=stocktwits_block,
             reddit_block=reddit_block,
+            brief_header=brief_header,
+            quality_note=quality_note,
         )
 
         prompt = ChatPromptTemplate.from_messages(
@@ -84,8 +104,6 @@ def create_sentiment_analyst(llm):
                 (
                     "system",
                     "You are a helpful AI assistant, collaborating with other assistants."
-                    " If you or any other assistant has the FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** or deliverable,"
-                    " prefix your response with FINAL TRANSACTION PROPOSAL: **BUY/HOLD/SELL** so the team knows to stop."
                     " Today's date is {current_date}; treat it as 'now' for all analysis and tool-call date ranges. {instrument_context}"
                     "\n{system_message}",
                 ),
@@ -126,11 +144,22 @@ def _build_system_message(
     news_block: str,
     stocktwits_block: str,
     reddit_block: str,
+    brief_header: str = "",
+    quality_note: str = "",
 ) -> str:
     """Assemble the sentiment-analyst system message with structured data blocks."""
+    aggregator_preamble = ""
+    if brief_header or quality_note:
+        parts = ["## Vein Aggregator context (non-authoritative)"]
+        if brief_header:
+            parts.append(brief_header)
+        if quality_note:
+            parts.append(quality_note)
+        aggregator_preamble = "\n\n".join(parts) + "\n\n"
+
     return f"""You are a financial market sentiment analyst. Your task is to produce a comprehensive sentiment report for {ticker} covering the period from {start_date} to {end_date}, drawing on three complementary data sources that have already been collected for you.
 
-## Data sources (pre-fetched, in this prompt)
+{aggregator_preamble}## Data sources (pre-fetched, in this prompt)
 
 ### News headlines — Yahoo Finance, past 7 days
 Institutional framing. Fact-driven, slower-moving signal.
@@ -170,6 +199,8 @@ Community discussion. Engagement signal via upvote score and comment count. Subr
 7. **Identify catalysts and risks** that emerge across sources — news of upcoming earnings, product launches, competitive threats, macro headlines, etc.
 
 8. **Past sentiment is not predictive.** Frame your conclusions as signal for the trader to weigh alongside fundamentals and technicals, not as a price call.
+
+{get_non_authoritative_analyst_instruction("sentiment brief")}
 
 ## Output fields
 

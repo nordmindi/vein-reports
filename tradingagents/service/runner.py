@@ -51,6 +51,7 @@ class ReportRequest:
     context_bundle: dict[str, Any] | None = None
     strategy_id: str | None = None
     report_tier: str = "pro"
+    full_report: bool = False
 
 
 @dataclass(frozen=True)
@@ -274,10 +275,24 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
 
     golden_trend_signal = fetch_signal_validation(ticker, strategy_id=request.strategy_id)
 
+    intelligence_bundle = None
+    intelligence_briefs = None
+    from tradingagents.integrations.vein_aggregator_client import fetch_intelligence_bundle
+
+    intelligence_bundle, intelligence_briefs = fetch_intelligence_bundle(
+        ticker,
+        end_date=request.analysis_date,
+        context_bundle=context_bundle,
+    )
+
     log_info("report_build_config", jobId=job_id, ticker=ticker)
     config = build_config(request, job_id)
     if context_bundle:
         config["vein_context_bundle"] = context_bundle
+    if intelligence_bundle:
+        config["vein_intelligence_bundle"] = intelligence_bundle
+    if intelligence_briefs:
+        config["vein_intelligence_briefs"] = intelligence_briefs
     config["golden_trend_signal"] = golden_trend_signal or {}
     config["llm_cache_namespace"] = f"{ticker}:{request.analysis_date}"
 
@@ -313,6 +328,10 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         final_state["golden_trend_signal"] = golden_trend_signal
     if config.get("vein_context_bundle"):
         final_state["vein_context_bundle"] = config.get("vein_context_bundle") or {}
+    if config.get("vein_intelligence_bundle"):
+        final_state["vein_intelligence_bundle"] = config.get("vein_intelligence_bundle") or {}
+    if config.get("vein_intelligence_briefs"):
+        final_state["vein_intelligence_briefs"] = config.get("vein_intelligence_briefs") or {}
 
     report_root = Path(os.getenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", "reports/api")).resolve()
     report_dir = report_root / job_id
@@ -340,6 +359,7 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         validation_result=validation_result,
         dashboard_model=dashboard_model,
         expected_analysts=request.selected_analysts,
+        user_requested_full_report=request.full_report,
     )
     log_info("report_markdown_saved", jobId=job_id, path=str(markdown_path))
 
