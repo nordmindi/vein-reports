@@ -28,7 +28,9 @@
 # TradingAgents: Multi-Agents LLM Financial Trading Framework
 
 ## Recent Fixes
-- **Service API and VEIN context**: The report service now documents `context_bundle` in Swagger, supports the `supply_chain` analyst, persists job status for polling across workers, and exposes dashboard, validation, and evidence artifacts through API endpoints.
+- **Thematic intelligence targets**: Report jobs accept `target` (`sector`, `commodity`, `index`, `crypto`) instead of `ticker`. Vein Aggregator is called with the matching target; Vein Explorer and Golden Trend are skipped for non-equity-like subjects. See [docs/TRINITY_INTEGRATION.md](docs/TRINITY_INTEGRATION.md).
+- **Vein Aggregator integration**: Pre-fetches `vein-intelligence-v1` bundles and briefs before the agent graph; Sentiment and News analysts consume section-aware blocks when present.
+- **Service API and VEIN context**: The report service documents `context_bundle` in Swagger, supports the `supply_chain` analyst, persists job status for polling across workers, and exposes dashboard, validation, and evidence artifacts through API endpoints.
 - **Asset Handling**: Fixed issue where logos were not appearing in PDF reports in production builds. Assets are now properly included in package distributions.
 
 ## News
@@ -69,6 +71,29 @@ TradingAgents is a multi-agent trading framework that mirrors the dynamics of re
 </p>
 
 > TradingAgents framework is designed for research purposes. Trading performance may vary based on many factors, including the chosen backbone language models, model temperature, trading periods, the quality of data, and other non-deterministic factors. [It is not intended as financial, investment, or trading advice.](https://tauric.ai/disclaimer/)
+
+## Vein Platform (vein-reports)
+
+This repository is the **vein-reports** deployment of TradingAgents — the synthesis and publication layer in the Vein platform. It orchestrates sibling HTTP services, runs a multi-agent LangGraph pipeline, and produces PDF reports plus machine-readable artifacts (dashboard, validation, evidence).
+
+| Service | Role | How vein-reports uses it |
+|---------|------|--------------------------|
+| **Vein Explorer** | Supply-chain graph | Optional `context_bundle` on report jobs; auto-pull when enabled |
+| **Vein Signals** | Technical validation | Golden Trend signal block; `report-validation-lite` for external callers |
+| **Vein Aggregator** | Intelligence feeds | Pre-fetch news, social, macro, Polymarket via `vein-intelligence-v1` |
+| **vein-reports** | Multi-agent reports | Job API, PDF, JSON artifacts (this repo) |
+
+**Report subjects:** submit equity jobs with `ticker`, or thematic jobs with `target`:
+
+```json
+{
+  "target": { "type": "sector", "value": "mining" },
+  "analysis_date": "2026-07-31",
+  "selected_analysts": ["market", "social", "news"]
+}
+```
+
+Integration details: [docs/TRINITY_INTEGRATION.md](docs/TRINITY_INTEGRATION.md). Aggregator contract: [vein-aggregator docs](https://github.com/nordmindi/vein-aggregator/blob/main/docs/vein-intelligence-v1.md).
 
 Our framework decomposes complex trading tasks into specialized roles.
 
@@ -218,7 +243,7 @@ TradingAgents can be deployed as a service in the cloud. See deployment guides f
 TradingAgents includes a powerful PDF generation engine to convert your markdown analysis into branded, high-fidelity intelligence reports.
 
 #### Features
-- **Executive Dashboard**: Automated summary of key metrics (Recommendation, Action, Price Targets).
+- **Executive Summary**: Curated 1–1.5 page summary with status, thesis, key evidence, signal service, and portfolio synthesis.
 - **Professional Branding**: "Bullion Analytics" themed headers, footers, and color palettes.
 - **Color-Coded Status Badges**: Visual indicators for sentiment and trading actions.
 - **Robust Layout**: Handles complex tables, lists, and multi-page wrapping automatically.
@@ -307,7 +332,7 @@ docker-compose -f docker-compose.service.yml up
 
 For detailed deployment instructions for cloud environments (Kubernetes, AWS, GCP, Azure), see `DEPLOYMENT.md` and the `k8s/` directory.
 
-The service provides a REST API for submitting report jobs, checking status, downloading PDFs, and fetching machine-readable dashboard, validation, evidence, and full-state JSON artifacts. Swagger is available at `/docs` when the service is running. See `docs/saas-service-api.md` for the current API contract, `docs/trading-report-service-vein-integration.md` for VEIN supply-chain context details, and `scripts/client_example.py` for a client implementation example.
+The service provides a REST API for submitting report jobs (equity **ticker** or thematic **target**), checking status, downloading PDFs, and fetching machine-readable dashboard, validation, evidence, and full-state JSON artifacts. Swagger is available at `/docs` when the service is running. See `docs/saas-service-api.md` for the current API contract, `docs/TRINITY_INTEGRATION.md` for platform wiring, `docs/trading-report-service-vein-integration.md` for VEIN supply-chain context, and `scripts/client_example.py` for a client implementation example.
 
 ## Persistence and Recovery
 

@@ -1,12 +1,14 @@
 # TradingAgents Service API - Postman Collection
 
-This directory contains a Postman collection for testing the TradingAgents service API.
+This directory contains a Postman collection for testing the TradingAgents (vein-reports) service API.
+
+For platform integration (Vein Explorer, Vein Signals, Vein Aggregator) see [docs/TRINITY_INTEGRATION.md](../docs/TRINITY_INTEGRATION.md).
 
 ## Overview
 
 The Postman collection includes requests for all API endpoints:
 - Health check
-- Report job creation (with various configurations)
+- Report job creation (equity ticker or thematic target)
 - Job status polling
 - PDF report download
 - Full-state JSON download
@@ -44,6 +46,10 @@ The Postman collection includes requests for all API endpoints:
 - `POST /v1/reports` - Create a minimal report job
 - `POST /v1/reports` - Create a report job with all analyst types
 - `POST /v1/reports` - Create a report job with VEIN supply-chain context
+- `POST /v1/reports` - Create a thematic sector report (`target: { type, value }`)
+- `POST /v1/reports` - Create a thematic commodity report
+- `POST /v1/reports` - Error case: Missing ticker and target
+- `POST /v1/reports` - Error case: Ticker and target together
 - `POST /v1/reports` - Error case: Invalid ticker
 - `POST /v1/reports` - Error case: Invalid date format
 - `POST /v1/reports` - Error case: Future date

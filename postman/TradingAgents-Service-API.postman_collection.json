@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "1f6f4dc2-7a43-4ae8-a83e-40e3d4d3955b",
     "name": "TradingAgents Service API",
-    "description": "Requests for testing the TradingAgents FastAPI service. Set base_url and api_key collection variables before running.",
+    "description": "Requests for testing the TradingAgents FastAPI service.\n\nSet `base_url` and `api_key` collection variables before running.\n\nReport jobs accept **either** `ticker` (equity) **or** `target` (sector, commodity, index, crypto). Thematic jobs skip Vein Explorer and Golden Trend validation and pull intelligence from Vein Aggregator by target.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -229,6 +229,204 @@
           ]
         },
         "description": "Creates a pro report job with VEIN supply-chain context. The service auto-adds the supply_chain analyst."
+      },
+      "response": []
+    },
+    {
+      "name": "Create Report Job - Sector Target",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Accepted\", function () {",
+              "  pm.expect(pm.response.code).to.eql(202);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "if (json.job_id) {",
+              "  pm.collectionVariables.set(\"job_id\", json.job_id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"target\": { \"type\": \"sector\", \"value\": \"mining\" },\n  \"analysis_date\": \"2026-07-31\",\n  \"report_tier\": \"pro\",\n  \"selected_analysts\": [\"market\", \"social\", \"news\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/reports",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports"
+          ]
+        },
+        "description": "Thematic sector report (mining). Fetches Vein Aggregator intelligence by target instead of equity ticker. Vein Explorer and Golden Trend are skipped."
+      },
+      "response": []
+    },
+    {
+      "name": "Create Report Job - Commodity Target",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Accepted\", function () {",
+              "  pm.expect(pm.response.code).to.eql(202);",
+              "});",
+              "",
+              "const json = pm.response.json();",
+              "if (json.job_id) {",
+              "  pm.collectionVariables.set(\"job_id\", json.job_id);",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"target\": { \"type\": \"commodity\", \"value\": \"gold\" },\n  \"analysis_date\": \"2026-07-31\",\n  \"report_tier\": \"pro\",\n  \"selected_analysts\": [\"market\", \"news\", \"social\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/reports",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports"
+          ]
+        },
+        "description": "Thematic commodity report (gold). Uses Vein Aggregator commodity target aggregation."
+      },
+      "response": []
+    },
+    {
+      "name": "Create Report Job - Missing Subject",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Bad Request\", function () {",
+              "  pm.expect(pm.response.code).to.eql(422);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"analysis_date\": \"2026-07-31\",\n  \"selected_analysts\": [\"market\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/reports",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports"
+          ]
+        },
+        "description": "Attempts to create a report job without ticker or target."
+      },
+      "response": []
+    },
+    {
+      "name": "Create Report Job - Ticker And Target",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Bad Request\", function () {",
+              "  pm.expect(pm.response.code).to.eql(422);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "X-API-Key",
+            "value": "{{api_key}}",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"ticker\": \"NVDA\",\n  \"target\": { \"type\": \"sector\", \"value\": \"tech\" },\n  \"analysis_date\": \"2026-07-31\",\n  \"selected_analysts\": [\"market\"]\n}"
+        },
+        "url": {
+          "raw": "{{base_url}}/v1/reports",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "v1",
+            "reports"
+          ]
+        },
+        "description": "Provide either ticker or target, not both — expect 422."
       },
       "response": []
     },
@@ -840,6 +1038,16 @@
     {
       "key": "job_id",
       "value": "",
+      "type": "string"
+    },
+    {
+      "key": "target_type",
+      "value": "sector",
+      "type": "string"
+    },
+    {
+      "key": "target_value",
+      "value": "mining",
       "type": "string"
     }
   ]

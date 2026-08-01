@@ -6,9 +6,10 @@ This document summarizes the Postman collection created for testing the TradingA
 
 The Postman collection provides a comprehensive set of requests for testing all aspects of the TradingAgents service API, including:
 - Health checks
-- Report job creation with various configurations
+- Report job creation with equity ticker or thematic target
 - Job status polling
 - PDF report download
+- JSON artifact downloads (dashboard, validation, evidence)
 - Error case testing
 
 ## Collection Structure
@@ -28,6 +29,11 @@ The Postman collection provides a comprehensive set of requests for testing all 
 - `POST /v1/reports` - Full configuration job creation
 - `POST /v1/reports` - Minimal job creation
 - `POST /v1/reports` - All analysts job creation
+- `POST /v1/reports` - VEIN context bundle job
+- `POST /v1/reports` - Sector target (`mining`)
+- `POST /v1/reports` - Commodity target (`gold`)
+- `POST /v1/reports` - Missing ticker and target error case
+- `POST /v1/reports` - Ticker and target together error case
 - `POST /v1/reports` - Invalid ticker error case
 - `POST /v1/reports` - Invalid date format error case
 - `POST /v1/reports` - Future date error case

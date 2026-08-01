@@ -59,6 +59,19 @@ Content-Type: application/json
 }
 ```
 
+Thematic report (no equity ticker — uses Vein Aggregator `target`):
+
+```json
+{
+  "target": { "type": "sector", "value": "mining" },
+  "analysis_date": "2026-07-31",
+  "report_tier": "pro",
+  "selected_analysts": ["market", "social", "news"]
+}
+```
+
+Provide **either** `ticker` **or** `target`, not both.
+
 Response:
 
 ```json
@@ -78,7 +91,9 @@ Response:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `ticker` | string | Required. Normalized to uppercase. |
+| `ticker` | string \| null | Equity ticker. Required unless `target` is set. Normalized to uppercase. |
+| `target.type` | string | With `target.value`: `equity`, `sector`, `commodity`, `index`, `crypto`. |
+| `target.value` | string | Sector, commodity, index, crypto, or equity name (e.g. `mining`, `gold`, `BTC`). |
 | `analysis_date` | string \| null | `YYYY-MM-DD`; defaults to the service date. Future dates are rejected. |
 | `selected_analysts` | string[] | Allowed: `market`, `social`, `news`, `fundamentals`, `supply_chain`. |
 | `report_tier` | `free` \| `pro` | Defaults to `pro`. `free` runs market analyst only with a **lite pipeline** (single final decision call, no debate/risk graph). |
@@ -92,6 +107,8 @@ Response:
 | `max_risk_discuss_rounds` | integer \| null | Must be at least 1. |
 | `checkpoint_enabled` | boolean \| null | Enables LangGraph checkpoint resume for the run. |
 | `user_id` | string \| null | Caller-owned user/job correlation id. |
+
+**Subject guardrails:** exactly one of `ticker` or `target` must be present. Thematic targets skip Vein Explorer auto-pull and Golden Trend validation for non-equity-like types (`sector`, `commodity`). Intelligence is fetched from Vein Aggregator using the same `target` payload.
 
 ## VEIN Supply-Chain Context
 
