@@ -26,6 +26,11 @@ from tradingagents.reporting import (
     write_decision_evidence_report,
     write_validation_report,
 )
+from tradingagents.integrations.intelligence_target import (
+    IntelligenceTarget,
+    is_equity_like_target,
+    resolve_report_subject,
+)
 from tradingagents.service.tier_profiles import apply_tier_profile
 from tradingagents.service.trace_logging import log_error, log_exception, log_info
 
@@ -36,8 +41,9 @@ VALID_ANALYSTS = {"market", "social", "news", "fundamentals", "supply_chain"}
 
 @dataclass(frozen=True)
 class ReportRequest:
-    ticker: str
     analysis_date: str
+    ticker: str | None = None
+    intelligence_target: IntelligenceTarget | None = None
     selected_analysts: tuple[str, ...] = ("market", "social", "news", "fundamentals")
     llm_provider: str | None = None
     deep_think_llm: str | None = None
@@ -67,8 +73,13 @@ class ReportResult:
 
 
 def validate_report_request(request: ReportRequest) -> None:
-    if not request.ticker.strip():
-        raise ValueError("ticker is required")
+    try:
+        resolve_report_subject(ticker=request.ticker, target=request.intelligence_target)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
+
+    if request.ticker and request.intelligence_target:
+        raise ValueError("provide either ticker or intelligence_target, not both")
 
     try:
         analysis_date = datetime.strptime(request.analysis_date, "%Y-%m-%d").date()
@@ -236,7 +247,12 @@ def _validate_context_bundle(request: ReportRequest) -> None:
         raise ValueError("context_bundle must be an object")
 
     primary_symbol = bundle.get("primary_symbol")
-    if primary_symbol and str(primary_symbol).strip().upper() != request.ticker.strip().upper():
+    subject = resolve_report_subject(ticker=request.ticker, target=request.intelligence_target)
+    if (
+        primary_symbol
+        and request.intelligence_target is None
+        and str(primary_symbol).strip().upper() != subject
+    ):
         raise ValueError("context_bundle.primary_symbol must match ticker")
 
     for key in (
@@ -258,10 +274,11 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
     validate_report_request(request)
 
     job_id = job_id or uuid4().hex
-    ticker = request.ticker.strip().upper()
+    ticker = resolve_report_subject(ticker=request.ticker, target=request.intelligence_target)
+    equity_like = is_equity_like_target(request.intelligence_target)
 
     context_bundle = request.context_bundle
-    if context_bundle is None:
+    if context_bundle is None and equity_like:
         from tradingagents.integrations.vein_explorer_client import (
             fetch_supply_chain_context,
             is_vein_pull_enabled,
@@ -271,16 +288,23 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
             context_bundle = fetch_supply_chain_context(ticker)
 
     golden_trend_signal = None
-    from tradingagents.integrations.golden_trend_client import fetch_signal_validation
+    if equity_like:
+        from tradingagents.integrations.golden_trend_client import fetch_signal_validation
 
-    golden_trend_signal = fetch_signal_validation(ticker, strategy_id=request.strategy_id)
+        golden_trend_signal = fetch_signal_validation(ticker, strategy_id=request.strategy_id)
 
     intelligence_bundle = None
     intelligence_briefs = None
     from tradingagents.integrations.vein_aggregator_client import fetch_intelligence_bundle
 
+    aggregator_symbol = (
+        request.ticker.strip().upper()
+        if request.ticker and request.intelligence_target is None
+        else None
+    )
     intelligence_bundle, intelligence_briefs = fetch_intelligence_bundle(
-        ticker,
+        aggregator_symbol,
+        target=request.intelligence_target,
         end_date=request.analysis_date,
         context_bundle=context_bundle,
     )
@@ -293,6 +317,8 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         config["vein_intelligence_bundle"] = intelligence_bundle
     if intelligence_briefs:
         config["vein_intelligence_briefs"] = intelligence_briefs
+    if request.intelligence_target:
+        config["vein_intelligence_target"] = request.intelligence_target.to_payload()
     config["golden_trend_signal"] = golden_trend_signal or {}
     config["llm_cache_namespace"] = f"{ticker}:{request.analysis_date}"
 

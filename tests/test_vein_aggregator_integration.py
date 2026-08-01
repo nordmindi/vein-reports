@@ -18,8 +18,10 @@ from tradingagents.integrations.intelligence_bundle_format import (
     format_sentiment_brief_header,
     format_stocktwits_block,
     has_intelligence_bundle,
+    resolve_bundle_subject_label,
     section_status,
 )
+from tradingagents.integrations.intelligence_target import IntelligenceTarget
 from tradingagents.integrations.vein_aggregator_client import (
     fetch_intelligence_bundle,
     is_vein_aggregator_enabled,
@@ -64,6 +66,23 @@ class TestIntelligenceBundleFormat:
         text = format_news_block(bundle, "NVDA")
         assert "NVIDIA AI demand remains strong" in text
         assert "Vein Aggregator" in text
+
+    def test_format_news_block_uses_target_label(self, bundle):
+        sector_bundle = copy.deepcopy(bundle)
+        sector_bundle["target"] = {"type": "sector", "value": "mining"}
+        sector_bundle["primary_symbol"] = "XME"
+        sector_bundle["retrieval"]["news_retrieval"] = {
+            "target_label": "Mining sector",
+            "target_type": "sector",
+            "target_value": "mining",
+        }
+        text = format_news_block(sector_bundle, "MINING")
+        assert "## mining (sector) News (Vein Aggregator)" in text
+
+    def test_resolve_bundle_subject_label_prefers_target(self, bundle):
+        sector_bundle = copy.deepcopy(bundle)
+        sector_bundle["target"] = {"type": "commodity", "value": "gold"}
+        assert resolve_bundle_subject_label(sector_bundle, "GLD") == "gold (commodity)"
 
     def test_format_news_block_empty_section(self, bundle):
         empty = copy.deepcopy(bundle)
@@ -167,6 +186,27 @@ class TestVeinAggregatorClient:
         assert payload["symbol"] == "NVDA"
         assert payload["briefs"] == ["sentiment", "news"]
         assert "AMD" in payload["peer_symbols"]
+
+    def test_fetch_sector_target_payload(self, monkeypatch, bundle):
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_ENABLED", "1")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_BASE_URL", "http://aggregator.test")
+
+        mock_response = MagicMock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.json.return_value = {"intelligence_bundle": bundle, "briefs": BRIEFS}
+
+        target = IntelligenceTarget(type="sector", value="mining")
+        with patch("tradingagents.integrations.vein_aggregator_client.requests.post") as post:
+            post.return_value = mock_response
+            fetch_intelligence_bundle(
+                None,
+                target=target,
+                end_date="2026-07-31",
+            )
+
+        payload = post.call_args.kwargs["json"]
+        assert "symbol" not in payload
+        assert payload["target"] == {"type": "sector", "value": "mining"}
 
 
 class TestTradingGraphNewsRetrieval:

@@ -8,6 +8,7 @@ from typing import Any
 
 import requests
 
+from tradingagents.integrations.intelligence_target import IntelligenceTarget
 from tradingagents.service.trace_logging import log_warning, trace_headers
 
 INTELLIGENCE_VERSION = "vein-intelligence-v1"
@@ -58,17 +59,16 @@ def _search_terms_from_context(context_bundle: dict[str, Any] | None) -> list[st
 
 
 def _build_payload(
-    symbol: str,
     *,
+    symbol: str | None,
+    target: IntelligenceTarget | None,
     end_date: str,
     context_bundle: dict[str, Any] | None,
     lookback_days: int,
 ) -> dict[str, Any]:
-    ticker = symbol.strip().upper()
     end_dt = datetime.strptime(end_date, "%Y-%m-%d")
     start_dt = end_dt - timedelta(days=lookback_days)
-    return {
-        "symbol": ticker,
+    payload: dict[str, Any] = {
         "window": {
             "start": start_dt.strftime("%Y-%m-%d"),
             "end": end_date,
@@ -81,11 +81,19 @@ def _build_payload(
             "vein_context_version": "vein-context-v1",
         },
     }
+    if target is not None:
+        payload["target"] = target.to_payload()
+    elif symbol and symbol.strip():
+        payload["symbol"] = symbol.strip().upper()
+    else:
+        raise ValueError("symbol or target is required for aggregator fetch")
+    return payload
 
 
 def fetch_intelligence_bundle(
-    symbol: str,
+    symbol: str | None = None,
     *,
+    target: IntelligenceTarget | None = None,
     end_date: str,
     context_bundle: dict[str, Any] | None = None,
     lookback_days: int = 7,
@@ -99,13 +107,19 @@ def fetch_intelligence_bundle(
     if not base:
         return None, None
 
-    ticker = symbol.strip().upper()
-    payload = _build_payload(
-        symbol,
-        end_date=end_date,
-        context_bundle=context_bundle,
-        lookback_days=lookback_days,
-    )
+    subject = (symbol or (target.value if target else "") or "").strip().upper()
+    try:
+        payload = _build_payload(
+            symbol=symbol,
+            target=target,
+            end_date=end_date,
+            context_bundle=context_bundle,
+            lookback_days=lookback_days,
+        )
+    except ValueError as exc:
+        log_warning("vein_aggregator_invalid_request", subject=subject, error=str(exc))
+        return None, None
+
     try:
         response = requests.post(
             f"{base}/v1/feeds/intelligence/briefs",
@@ -118,7 +132,7 @@ def fetch_intelligence_bundle(
     except (requests.RequestException, ValueError) as exc:
         log_warning(
             "vein_aggregator_fetch_failed",
-            symbol=ticker,
+            subject=subject,
             error=str(exc),
             errorType=exc.__class__.__name__,
         )
@@ -139,7 +153,7 @@ def fetch_intelligence_bundle(
     if isinstance(bundle, dict) and bundle.get("version") != INTELLIGENCE_VERSION:
         log_warning(
             "vein_aggregator_unexpected_version",
-            symbol=ticker,
+            subject=subject,
             version=bundle.get("version"),
         )
     return bundle, briefs

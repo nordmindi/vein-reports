@@ -2,6 +2,7 @@ import pytest
 
 from tradingagents.graph.conditional_logic import ConditionalLogic
 from tradingagents.graph.setup import GraphSetup
+from tradingagents.integrations.intelligence_target import IntelligenceTarget
 from tradingagents.service.runner import ReportRequest, validate_report_request
 
 
@@ -44,6 +45,26 @@ class TestReportRequestValidation:
         )
 
         with pytest.raises(ValueError, match="primary_symbol must match ticker"):
+            validate_report_request(request)
+
+    def test_accepts_sector_target_without_ticker(self):
+        request = ReportRequest(
+            analysis_date="2026-06-30",
+            intelligence_target=IntelligenceTarget(type="sector", value="mining"),
+            selected_analysts=("market", "news"),
+        )
+
+        validate_report_request(request)
+
+    def test_rejects_ticker_and_target_together(self):
+        request = ReportRequest(
+            ticker="TSLA",
+            analysis_date="2026-06-30",
+            intelligence_target=IntelligenceTarget(type="sector", value="mining"),
+            selected_analysts=("market",),
+        )
+
+        with pytest.raises(ValueError, match="not both"):
             validate_report_request(request)
 
 

@@ -98,6 +98,47 @@ class TestServiceApiContract:
         assert "/v1/reports/{job_id}/metrics" in schema["paths"]
         assert "ReportJobMetrics" in schema["components"]["schemas"]
         assert "/v1/report-validation-lite" in schema["paths"]
+        assert "target" in create_schema["properties"]
+        assert "IntelligenceTargetInput" in schema["components"]["schemas"]
+
+    def test_create_report_request_accepts_sector_target(self):
+        payload = api.CreateReportRequest(
+            target={"type": "sector", "value": "mining"},
+            analysis_date="2026-07-31",
+        )
+        assert payload.target is not None
+        assert payload.target.to_target().type == "sector"
+        assert payload.ticker is None
+
+    def test_create_report_request_rejects_ticker_and_target(self):
+        with pytest.raises(ValueError, match="not both"):
+            api.CreateReportRequest(
+                ticker="NVDA",
+                target={"type": "sector", "value": "mining"},
+                analysis_date="2026-07-31",
+            )
+
+    def test_create_report_endpoint_accepts_target(self, monkeypatch):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_API_KEY", "test-key")
+        monkeypatch.setattr(api.executor, "submit", lambda fn, record: None)
+        api.jobs.clear()
+        client = TestClient(api.app)
+        response = client.post(
+            "/v1/reports",
+            headers={"X-API-Key": "test-key"},
+            json={
+                "target": {"type": "sector", "value": "mining"},
+                "analysis_date": "2026-07-31",
+                "selected_analysts": ["market", "news"],
+            },
+        )
+        assert response.status_code == 202
+        job_id = response.json()["job_id"]
+        record = api.jobs[job_id]
+        assert record.request.ticker is None
+        assert record.request.intelligence_target is not None
+        assert record.request.intelligence_target.type == "sector"
+        assert record.request.intelligence_target.value == "mining"
 
     def test_report_validation_lite_endpoint(self, monkeypatch):
         monkeypatch.setenv("TRADINGAGENTS_SERVICE_API_KEY", "test-key")

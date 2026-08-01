@@ -7,13 +7,15 @@ from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 from uuid import uuid4
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from tradingagents.integrations.intelligence_target import IntelligenceTarget, resolve_report_subject
 
 from tradingagents.service.runner import (
     ReportRequest,
@@ -156,6 +158,29 @@ class VeinContextBundle(BaseModel):
     generated_at: str | None = Field(default=None, examples=["2026-06-30T18:00:00.000Z"])
 
 
+class IntelligenceTargetInput(BaseModel):
+    type: str = Field(
+        ...,
+        description="Target category: equity, commodity, sector, index, or crypto",
+        examples=["sector"],
+    )
+    value: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Ticker, commodity, sector, or index name",
+        examples=["mining"],
+    )
+
+    def to_target(self) -> IntelligenceTarget:
+        target_type = self.type.strip().lower()
+        if target_type not in ("equity", "commodity", "sector", "index", "crypto"):
+            raise ValueError(
+                "target.type must be one of: equity, commodity, sector, index, crypto"
+            )
+        return IntelligenceTarget(type=target_type, value=self.value.strip())
+
+
 class CreateReportRequest(BaseModel):
     model_config = ConfigDict(
         json_schema_extra={
@@ -172,6 +197,12 @@ class CreateReportRequest(BaseModel):
                     "max_risk_discuss_rounds": 1,
                     "output_language": "English",
                     "user_id": "saas-user-id",
+                },
+                {
+                    "target": {"type": "sector", "value": "mining"},
+                    "analysis_date": "2026-07-31",
+                    "report_tier": "pro",
+                    "selected_analysts": ["market", "social", "news"],
                 },
                 {
                     "ticker": "TSLA",
@@ -199,7 +230,17 @@ class CreateReportRequest(BaseModel):
         }
     )
 
-    ticker: str = Field(..., min_length=1, max_length=32, examples=["NVDA"])
+    ticker: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=32,
+        description="Equity ticker for the report subject. Omit when using `target`.",
+        examples=["NVDA"],
+    )
+    target: IntelligenceTargetInput | None = Field(
+        default=None,
+        description="Thematic intelligence target for sector/commodity/index/crypto aggregation.",
+    )
     analysis_date: str | None = Field(
         default=None,
         description="Analysis date in YYYY-MM-DD format. Defaults to the service date.",
@@ -235,11 +276,30 @@ class CreateReportRequest(BaseModel):
         description="Optional Vein Signals strategy profile for signal validation.",
         examples=["golden-trend-balanced"],
     )
+    full_report: bool = Field(
+        default=False,
+        description=(
+            "When true, publish FULL report mode with an appendix containing raw analyst, "
+            "debate, and portfolio outputs."
+        ),
+    )
 
     @field_validator("ticker")
     @classmethod
-    def normalize_ticker(cls, value: str) -> str:
+    def normalize_ticker(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         return value.strip().upper()
+
+    @model_validator(mode="after")
+    def validate_subject(self) -> Self:
+        has_ticker = bool(self.ticker and self.ticker.strip())
+        has_target = self.target is not None
+        if not has_ticker and not has_target:
+            raise ValueError("either ticker or target is required")
+        if has_ticker and has_target:
+            raise ValueError("provide either ticker or target, not both")
+        return self
 
     @field_validator("selected_analysts")
     @classmethod
@@ -541,6 +601,13 @@ def require_service_key(x_api_key: str | None = Header(default=None)) -> None:
         )
 
 
+def _request_subject(request: ReportRequest) -> str:
+    return resolve_report_subject(
+        ticker=request.ticker,
+        target=request.intelligence_target,
+    )
+
+
 def _run_job_in_context(record: JobRecord) -> ReportResult:
     tokens = bind_trace_from_mapping(record.trace, default_service="vein-reports")
     job_tokens = bind_trace(job_id=record.job_id, span="report.job.execute")
@@ -559,7 +626,7 @@ def _execute_job(record: JobRecord) -> ReportResult:
     log_info(
         "report_job_started",
         jobId=record.job_id,
-        ticker=record.request.ticker,
+        ticker=_request_subject(record.request),
         analysisDate=record.request.analysis_date,
         analysts=list(record.request.selected_analysts),
         llmProvider=record.request.llm_provider or "default",
@@ -670,6 +737,8 @@ def health() -> dict[str, str]:
 def create_report(payload: CreateReportRequest) -> CreateReportResponse:
     analysis_date = payload.analysis_date or datetime.now().strftime("%Y-%m-%d")
     job_id = uuid4().hex
+    intelligence_target = payload.target.to_target() if payload.target else None
+    subject = resolve_report_subject(ticker=payload.ticker, target=intelligence_target)
     context_bundle = (
         payload.context_bundle.model_dump(mode="json")
         if payload.context_bundle is not None
@@ -689,7 +758,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         log_info(
             "report_job_create_free_tier",
             jobId=job_id,
-            ticker=payload.ticker,
+            ticker=subject,
             analysisDate=analysis_date,
             analysts=selected_analysts,
         )
@@ -699,7 +768,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         log_info(
             "report_job_create_pro_tier",
             jobId=job_id,
-            ticker=payload.ticker,
+            ticker=subject,
             analysisDate=analysis_date,
             analysts=selected_analysts,
         )
@@ -707,6 +776,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
     request = ReportRequest(
         ticker=payload.ticker,
         analysis_date=analysis_date,
+        intelligence_target=intelligence_target,
         selected_analysts=tuple(selected_analysts),
         llm_provider=payload.llm_provider,
         deep_think_llm=payload.deep_think_llm,
@@ -720,6 +790,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         context_bundle=context_bundle,
         strategy_id=payload.strategy_id,
         report_tier=payload.report_tier.value,
+        full_report=payload.full_report,
     )
     try:
         validate_report_request(request)
@@ -735,7 +806,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
     _write_job_record(record)
     record.future = executor.submit(_run_job_in_context, record)
 
-    log_info("report_job_queued", jobId=job_id, ticker=payload.ticker, reportTier=payload.report_tier.value)
+    log_info("report_job_queued", jobId=job_id, ticker=subject, reportTier=payload.report_tier.value)
 
     return CreateReportResponse(
         job_id=job_id,
@@ -763,7 +834,7 @@ def get_report(job_id: str) -> ReportJobResponse:
     return ReportJobResponse(
         job_id=record.job_id,
         status=record.status,
-        ticker=record.request.ticker,
+        ticker=result.ticker if result else _request_subject(record.request),
         analysis_date=record.request.analysis_date,
         decision=result.decision if result else None,
         error=record.error,

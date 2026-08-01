@@ -129,16 +129,44 @@ def _format_news_articles(
     return "\n".join(lines).strip()
 
 
+def resolve_bundle_subject_label(bundle: dict[str, Any], fallback: str) -> str:
+    """Display label from bundle target metadata or primary proxy symbol."""
+    target = bundle.get("target")
+    if isinstance(target, dict):
+        value = str(target.get("value") or "").strip()
+        target_type = str(target.get("type") or "").strip()
+        if value and target_type and target_type not in ("equity",):
+            return f"{value} ({target_type})"
+        if value:
+            return value.upper()
+
+    retrieval = bundle.get("retrieval") if isinstance(bundle.get("retrieval"), dict) else {}
+    news_retrieval = (
+        retrieval.get("news_retrieval")
+        if isinstance(retrieval.get("news_retrieval"), dict)
+        else {}
+    )
+    target_label = news_retrieval.get("target_label")
+    if target_label:
+        return str(target_label)
+
+    primary = bundle.get("primary_symbol")
+    if primary:
+        return str(primary).upper()
+    return fallback
+
+
 def format_news_block(bundle: dict[str, Any], ticker: str) -> str:
+    subject = resolve_bundle_subject_label(bundle, ticker)
     if section_status(bundle, "news") == "empty":
-        return f"## {ticker} News (Vein Aggregator)\n\n<no news data collected>"
+        return f"## {subject} News (Vein Aggregator)\n\n<no news data collected>"
 
     news = bundle.get("news") if isinstance(bundle.get("news"), dict) else {}
     primary = news.get("primary") or []
     window = bundle.get("window") or {}
     start = window.get("start") or "?"
     end = window.get("end") or "?"
-    header = f"## {ticker} News (Vein Aggregator), from {start} to {end}:"
+    header = f"## {subject} News (Vein Aggregator), from {start} to {end}:"
     parts = [_format_news_articles(primary, header=header)]
     peers = news.get("peers") or []
     for group in peers:
