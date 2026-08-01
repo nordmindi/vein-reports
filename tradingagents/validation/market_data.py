@@ -81,7 +81,7 @@ def check_market_data_freshness(
         sessions_stale=sessions_stale,
         freshness_status=status,
         max_completed_sessions_old=max_completed_sessions_old,
-        recommendation_allowed=status == "fresh",
+        recommendation_allowed=status in ("fresh", "stale"),
         warnings=[] if status == "fresh" else [
             f"Market data are {sessions_stale} completed sessions old."
         ],

@@ -38,23 +38,59 @@ BLOCKED_FORBIDDEN_TERMS: tuple[str, ...] = (
     "ADD EXPOSURE",
 )
 
+# Longest phrases first. Neutral replacements keep meaning without failing
+# RHETORICAL_LANGUAGE validation in published composition.
+RHETORICAL_REPLACEMENTS: tuple[tuple[str, str], ...] = (
+    ("reading the tea leaves", "interpreting limited signals"),
+    ("screaming sell signal", "bearish technical signal"),
+    ("deer in the headlights", "hesitant"),
+    ("clash violently", "conflict sharply"),
+    ("clashes violently", "conflict sharply"),
+    ("clashed violently", "conflicted sharply"),
+    ("clashing violently", "conflicting sharply"),
+    ("extremely compelling", "supportive"),
+    ("very compelling", "supportive"),
+    ("bull's mirage", "optimistic setup"),
+    ("bulls mirage", "optimistic setup"),
+    ("massive mistake", "material risk"),
+    ("suicidal stop", "aggressive stop"),
+    ("smart money", "institutional flows"),
+    ("brick wall", "firm resistance"),
+    ("slam dunk", "favorable setup"),
+    ("can't miss", "notable"),
+    ("no-brainer", "straightforward"),
+    ("no brainer", "straightforward"),
+    ("bulls are in control", "buyers retain control"),
+    ("catastrophic", "steep"),
+    ("inevitable", "likely"),
+    ("guaranteed", "probable"),
+    ("gambling", "speculative positioning"),
+)
+
 AGENT_PROCESS_PHRASES: tuple[str, ...] = (
     "now i have all data needed",
     "now i have all the data needed",
+    "let me analyze the findings",
     "let me compile the comprehensive analysis",
     "let me compile the comprehensive report",
     "let me compile a comprehensive fundamental analysis report",
     "let me compile a comprehensive analysis report",
+    "let me compile a comprehensive market structure report",
     "i now have comprehensive data across all financial statements",
+    "based on the comprehensive data retrieved",
+    "i'll now compile a detailed fundamental analysis report",
 )
 
 # Broader patterns for agent meta-language that varies by model/run.
 AGENT_PROCESS_REGEXES: tuple[str, ...] = (
     r"\blet me compile\b[^.!?\n]*(?:report|analysis)\b[.!?]?",
+    r"\blet me analyze the findings\b[.!?]?",
     r"\bi(?:'ll| will) (?:now )?(?:compile|prepare|draft|write)\b[^.!?\n]*(?:report|analysis)\b[.!?]?",
     r"\bnow i have (?:all )?(?:the )?data\b[^.!?\n]*(?:needed|required|gathered|available)\b[.!?]?",
+    r"\bi now have all (?:the )?data\b[^.!?\n]*(?:needed|required|to compile)\b[^.!?\n]*[.!?]?",
     r"\bi now have (?:comprehensive |sufficient )?data\b[^.!?\n]*[.!?]?",
-    r"\bbased on (?:the )?data (?:i(?:'ve| have) |we(?:'ve| have) )gathered\b[.!?]?",
+    r"\bbased on (?:the )?(?:comprehensive )?data (?:i(?:'ve| have) |we(?:'ve| have) )?(?:gathered|retrieved)\b[^.!?\n]*[.!?]?",
+    r"\bcomprehensive market structure report for\b[^.!?\n]*[.!?]?",
 )
 
 

@@ -1,16 +1,20 @@
 """Tests for the shared rating heuristic and the SignalProcessor adapter.
 
 The Portfolio Manager produces a typed PortfolioDecision via structured
-output and renders it to markdown that always contains a ``**Rating**: X``
-header.  The deterministic heuristic in ``tradingagents.agents.utils.rating``
-is therefore sufficient to extract the rating downstream — no second LLM
-call is needed — and SignalProcessor is now a thin adapter that delegates
-to it.
+output and renders it to markdown that always contains a
+``**Recommendation**: X`` header.  The deterministic heuristic in
+``tradingagents.agents.utils.rating`` maps research recommendations to a
+legacy directional rating for downstream consumers — no second LLM call is
+needed — and SignalProcessor is now a thin adapter that delegates to it.
 """
 
 import pytest
 
-from tradingagents.agents.utils.rating import RATINGS_5_TIER, parse_rating
+from tradingagents.agents.utils.rating import (
+    RATINGS_5_TIER,
+    parse_rating,
+    parse_research_recommendation,
+)
 from tradingagents.graph.signal_processing import SignalProcessor
 
 # ---------------------------------------------------------------------------
@@ -36,11 +40,12 @@ class TestParseRating:
     def test_rendered_pm_markdown_shape(self):
         # The exact shape produced by render_pm_decision must always parse.
         text = (
-            "**Rating**: Buy\n\n"
-            "**Executive Summary**: Enter at $189-192, 6% portfolio cap.\n\n"
+            "**Recommendation**: Trade candidate\n\n"
+            "**Synthesis**: Interesting setup with improving momentum.\n\n"
             "**Investment Thesis**: AI capex cycle intact; institutional flows constructive."
         )
         assert parse_rating(text) == "Buy"
+        assert parse_research_recommendation(text) == "Trade candidate"
 
     def test_explicit_label_wins_over_prose_with_markdown(self):
         text = (

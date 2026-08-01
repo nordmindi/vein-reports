@@ -166,12 +166,30 @@ def _validate_moving_average_claims(text: str, metadata: dict, location: str) ->
 
 
 def _strip_cross_context_language(text: str) -> str:
-    return re.sub(
+    cleaned = re.sub(
         r"(?i)\b(?:golden\s*/\s*death|golden\s+or\s+death|golden|death)\s+cross\s+"
         r"(?:context|setups?|watchlist|reference)\b",
         "",
         text,
     )
+    cleaned = re.sub(
+        r"(?i)\b(?:approaching|precedes|preceding|compressing|on the)\s+(?:a\s+)?"
+        r"(?:golden|death)\s+cross\b",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(?i)\b(?:golden|death)\s+cross\s+(?:approaching|approaches|compressing|"
+        r"formation|formations|argument|debate|being)\b",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(?i)\bhistorically precedes\s+(?:golden|death)\s+cross\s+formations\b",
+        "",
+        cleaned,
+    )
+    return cleaned
 
 
 def _validate_bollinger_claims(text: str, metadata: dict, location: str) -> list[ValidationIssue]:
@@ -211,13 +229,7 @@ def _validate_volume_inference_claims(
     metadata: dict,
     location: str,
 ) -> list[ValidationIssue]:
-    if not re.search(
-        r"(?i)\b(institutional (?:buying|selling|accumulation|distribution)|"
-        r"smart money|seller exhaustion|buyer exhaustion|accumulation by funds|"
-        r"distribution by funds|accumulation behavior|distribution behavior|"
-        r"buyers stepping in|funds building positions)\b",
-        text,
-    ):
+    if not _has_volume_inference_claim(text):
         return []
 
     validation = _as_dict(metadata.get("volume_inference")) or {}
@@ -304,6 +316,26 @@ def _validated_event(validation: dict | None, expected_event: str) -> bool:
 
 def _cross_matches(cross: dict, event: str) -> bool:
     return cross.get("event") == event and bool(cross.get("event_date"))
+
+
+_VOLUME_INFERENCE_RE = re.compile(
+    r"(?i)\b(institutional (?:buying|selling|accumulation|distribution)|"
+    r"smart money|seller exhaustion|buyer exhaustion|accumulation by funds|"
+    r"distribution by funds|accumulation behavior|distribution behavior|"
+    r"buyers stepping in|funds building positions)\b"
+)
+
+
+def _has_volume_inference_claim(text: str) -> bool:
+    for match in _VOLUME_INFERENCE_RE.finditer(text):
+        prefix = text[max(0, match.start() - 40) : match.start()]
+        if re.search(
+            r"(?i)\b(?:no|not|without|lack(?:s|ing)?|unconfirmed|denied|absence of)\s+\w*\s*$",
+            prefix,
+        ):
+            continue
+        return True
+    return False
 
 
 def _as_dict(value):

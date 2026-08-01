@@ -36,6 +36,35 @@ def message_content_to_text(content: Any) -> str:
     return str(content).strip()
 
 
+def _tool_result_texts(messages: list[Any]) -> list[str]:
+    """Collect non-empty tool responses already present in the conversation."""
+    texts: list[str] = []
+    for message in messages:
+        name = getattr(message, "type", None) or message.__class__.__name__
+        is_tool = name in {"tool", "ToolMessage"} or "ToolMessage" in type(message).__name__
+        if not is_tool and not hasattr(message, "tool_call_id"):
+            continue
+        text = message_content_to_text(getattr(message, "content", ""))
+        if text:
+            texts.append(text)
+    return texts
+
+
+def synthesize_report_from_tool_results(messages: list[Any], *, report_key: str) -> str:
+    """Build a minimal report from tool outputs when the LLM returns blank text."""
+    chunks = _tool_result_texts(messages)
+    if not chunks:
+        return ""
+    heading = report_key.replace("_", " ").title()
+    body = "\n\n".join(chunks[:8])
+    return (
+        f"## {heading}\n\n"
+        "The analyst did not produce a final narrative after tool use. "
+        "The following evidence was retrieved and is published for downstream review:\n\n"
+        f"{body}"
+    )
+
+
 def invoke_analyst_with_tools(
     *,
     llm: Any,
@@ -49,7 +78,9 @@ def invoke_analyst_with_tools(
 
     When ``max_tool_rounds`` is set and another tool-call response would be
     discarded by conditional routing (``Msg Clear``), re-invoke without tools
-    so ``report_key`` is never left empty.
+    so ``report_key`` is never left empty. If the model still returns blank
+    text after tools have already produced content, synthesize a fallback
+    report from those tool results.
     """
     tool_chain = prompt | llm.bind_tools(tools)
     result = tool_chain.invoke(messages)
@@ -65,6 +96,8 @@ def invoke_analyst_with_tools(
     if would_hit_cap:
         final_result = (prompt | llm).invoke(messages)
         report = message_content_to_text(getattr(final_result, "content", ""))
+        if not report:
+            report = synthesize_report_from_tool_results(messages, report_key=report_key)
         return {
             "messages": [final_result],
             report_key: report,
@@ -73,6 +106,8 @@ def invoke_analyst_with_tools(
     report = ""
     if not tool_calls:
         report = message_content_to_text(getattr(result, "content", ""))
+        if not report:
+            report = synthesize_report_from_tool_results(messages, report_key=report_key)
 
     return {
         "messages": [result],

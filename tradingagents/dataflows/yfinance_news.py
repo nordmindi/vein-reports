@@ -7,6 +7,7 @@ import yfinance as yf
 from dateutil.relativedelta import relativedelta
 
 from .config import get_config
+from .errors import NoMarketDataError
 from .stockstats_utils import yf_retry
 from .symbol_utils import normalize_symbol
 
@@ -93,42 +94,42 @@ def get_news_yfinance(
     # returns no news. Keep the user's ticker in the report header.
     canonical = normalize_symbol(ticker)
     resolved = "" if canonical == ticker else f" (resolved to {canonical})"
-    try:
-        stock = yf.Ticker(canonical)
-        news = yf_retry(lambda: stock.get_news(count=article_limit))
+    stock = yf.Ticker(canonical)
+    news = yf_retry(lambda: stock.get_news(count=article_limit))
 
-        if not news:
-            return f"No news found for {ticker}{resolved}"
+    if not news:
+        raise NoMarketDataError(ticker, canonical, "no news articles returned")
 
-        # Parse date range for filtering
-        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
-        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+    # Parse date range for filtering
+    start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+    end_dt = datetime.strptime(end_date, "%Y-%m-%d")
 
-        news_str = ""
-        filtered_count = 0
+    news_str = ""
+    filtered_count = 0
 
-        for article in news:
-            data = _extract_article_data(article)
+    for article in news:
+        data = _extract_article_data(article)
 
-            # Keep only articles within the requested window (look-ahead safe).
-            if not _in_news_window(data["pub_date"], start_dt, end_dt):
-                continue
+        # Keep only articles within the requested window (look-ahead safe).
+        if not _in_news_window(data["pub_date"], start_dt, end_dt):
+            continue
 
-            news_str += f"### {data['title']} (source: {data['publisher']})\n"
-            if data["summary"]:
-                news_str += f"{data['summary']}\n"
-            if data["link"]:
-                news_str += f"Link: {data['link']}\n"
-            news_str += "\n"
-            filtered_count += 1
+        news_str += f"### {data['title']} (source: {data['publisher']})\n"
+        if data["summary"]:
+            news_str += f"{data['summary']}\n"
+        if data["link"]:
+            news_str += f"Link: {data['link']}\n"
+        news_str += "\n"
+        filtered_count += 1
 
-        if filtered_count == 0:
-            return f"No news found for {ticker}{resolved} between {start_date} and {end_date}"
+    if filtered_count == 0:
+        raise NoMarketDataError(
+            ticker,
+            canonical,
+            f"no news in window {start_date}..{end_date}",
+        )
 
-        return f"## {ticker}{resolved} News, from {start_date} to {end_date}:\n\n{news_str}"
-
-    except Exception as e:
-        return f"Error fetching news for {ticker}: {str(e)}"
+    return f"## {ticker}{resolved} News, from {start_date} to {end_date}:\n\n{news_str}"
 
 
 def get_global_news_yfinance(
@@ -159,61 +160,61 @@ def get_global_news_yfinance(
     all_news = []
     seen_titles = set()
 
-    try:
-        for query in search_queries:
-            search = yf_retry(lambda q=query: yf.Search(
-                query=q,
-                news_count=limit,
-                enable_fuzzy_query=True,
-            ))
+    for query in search_queries:
+        search = yf_retry(lambda q=query: yf.Search(
+            query=q,
+            news_count=limit,
+            enable_fuzzy_query=True,
+        ))
 
-            if search.news:
-                for article in search.news:
-                    # Handle both flat and nested structures
-                    if "content" in article:
-                        data = _extract_article_data(article)
-                        title = data["title"]
-                    else:
-                        title = article.get("title", "")
+        if search.news:
+            for article in search.news:
+                # Handle both flat and nested structures
+                if "content" in article:
+                    data = _extract_article_data(article)
+                    title = data["title"]
+                else:
+                    title = article.get("title", "")
 
-                    # Deduplicate by title
-                    if title and title not in seen_titles:
-                        seen_titles.add(title)
-                        all_news.append(article)
+                # Deduplicate by title
+                if title and title not in seen_titles:
+                    seen_titles.add(title)
+                    all_news.append(article)
 
-            if len(all_news) >= limit:
-                break
+        if len(all_news) >= limit:
+            break
 
-        if not all_news:
-            return f"No global news found for {curr_date}"
+    if not all_news:
+        raise NoMarketDataError("GLOBAL", "GLOBAL", f"no global news for {curr_date}")
 
-        # Calculate date range
-        curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
-        start_dt = curr_dt - relativedelta(days=look_back_days)
-        start_date = start_dt.strftime("%Y-%m-%d")
+    # Calculate date range
+    curr_dt = datetime.strptime(curr_date, "%Y-%m-%d")
+    start_dt = curr_dt - relativedelta(days=look_back_days)
+    start_date = start_dt.strftime("%Y-%m-%d")
 
-        news_str = ""
-        kept = 0
-        for article in all_news[:limit]:
-            # Extract uniformly (flat + nested) and apply the same look-ahead-safe
-            # window filter, so flat articles can't leak future news (#1007).
-            data = _extract_article_data(article)
-            if not _in_news_window(data["pub_date"], start_dt, curr_dt):
-                continue
-            news_str += f"### {data['title']} (source: {data['publisher']})\n"
-            if data["summary"]:
-                news_str += f"{data['summary']}\n"
-            if data["link"]:
-                news_str += f"Link: {data['link']}\n"
-            news_str += "\n"
-            kept += 1
+    news_str = ""
+    kept = 0
+    for article in all_news[:limit]:
+        # Extract uniformly (flat + nested) and apply the same look-ahead-safe
+        # window filter, so flat articles can't leak future news (#1007).
+        data = _extract_article_data(article)
+        if not _in_news_window(data["pub_date"], start_dt, curr_dt):
+            continue
+        news_str += f"### {data['title']} (source: {data['publisher']})\n"
+        if data["summary"]:
+            news_str += f"{data['summary']}\n"
+        if data["link"]:
+            news_str += f"Link: {data['link']}\n"
+        news_str += "\n"
+        kept += 1
 
-        # All candidates fell outside the window -> say so rather than return an
-        # empty-bodied report (#993).
-        if kept == 0:
-            return f"No global news found between {start_date} and {curr_date}"
+    # All candidates fell outside the window -> say so rather than return an
+    # empty-bodied report (#993).
+    if kept == 0:
+        raise NoMarketDataError(
+            "GLOBAL",
+            "GLOBAL",
+            f"no global news in window {start_date}..{curr_date}",
+        )
 
-        return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"
-
-    except Exception as e:
-        return f"Error fetching global news: {str(e)}"
+    return f"## Global Market News, from {start_date} to {curr_date}:\n\n{news_str}"

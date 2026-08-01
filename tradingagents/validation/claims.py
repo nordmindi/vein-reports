@@ -225,12 +225,30 @@ def _candidate_statements(text: str) -> list[str]:
 
 
 def _strip_cross_context_language(text: str) -> str:
-    return re.sub(
+    cleaned = re.sub(
         r"(?i)\b(?:golden\s*/\s*death|golden\s+or\s+death|golden|death)\s+cross\s+"
         r"(?:context|setups?|watchlist|reference)\b",
         "",
         text,
     )
+    cleaned = re.sub(
+        r"(?i)\b(?:approaching|precedes|preceding|compressing|on the)\s+(?:a\s+)?"
+        r"(?:golden|death)\s+cross\b",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(?i)\b(?:golden|death)\s+cross\s+(?:approaching|approaches|compressing|"
+        r"formation|formations|argument|debate|being)\b",
+        "",
+        cleaned,
+    )
+    cleaned = re.sub(
+        r"(?i)\bhistorically precedes\s+(?:golden|death)\s+cross\s+formations\b",
+        "",
+        cleaned,
+    )
+    return cleaned
 
 
 def _iter_claim_fields(final_state: dict) -> list[tuple[str, str]]:

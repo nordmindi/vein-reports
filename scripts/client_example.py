@@ -6,6 +6,7 @@ This script demonstrates how to interact with the TradingAgents service
 from another application.
 """
 
+import argparse
 import os
 import sys
 import time
@@ -33,12 +34,21 @@ class TradingAgentsClient:
         self.api_key = api_key
         self.headers = {"X-API-Key": api_key}
 
-    def submit_report(self, ticker, analysis_date=None, analysts=None, **kwargs):
+    def submit_report(
+        self,
+        ticker=None,
+        *,
+        target=None,
+        analysis_date=None,
+        analysts=None,
+        **kwargs,
+    ):
         """
         Submit a report generation job.
 
         Args:
-            ticker (str): Stock ticker symbol
+            ticker (str, optional): Equity ticker symbol
+            target (dict, optional): Thematic target ``{type, value}`` for sector/commodity reports
             analysis_date (str, optional): Analysis date (YYYY-MM-DD)
             analysts (list, optional): List of analysts to use
             **kwargs: Additional configuration options
@@ -47,28 +57,32 @@ class TradingAgentsClient:
             dict: Job submission response
         """
         payload = {
-            "ticker": ticker,
             "analysis_date": analysis_date,
             "selected_analysts": analysts or ["market", "social", "news", "fundamentals"],
-            **kwargs
+            **kwargs,
         }
+        if target is not None:
+            payload["target"] = target
+        elif ticker is not None:
+            payload["ticker"] = ticker
+        else:
+            raise ValueError("provide either ticker or target")
 
         response = requests.post(
             f"{self.base_url}/v1/reports",
             json=payload,
-            headers=self.headers
+            headers=self.headers,
         )
 
         if response.status_code == 202:
             return response.json()
-        else:
-            response.raise_for_status()
+        response.raise_for_status()
 
     def get_report_json(self, job_id):
         """Download the full final-state JSON for a completed report."""
         response = requests.get(
             f"{self.base_url}/v1/reports/{job_id}/json",
-            headers=self.headers
+            headers=self.headers,
         )
         response.raise_for_status()
         return response.json()
@@ -77,7 +91,7 @@ class TradingAgentsClient:
         """Download dashboard.json for a completed report."""
         response = requests.get(
             f"{self.base_url}/v1/reports/{job_id}/dashboard",
-            headers=self.headers
+            headers=self.headers,
         )
         response.raise_for_status()
         return response.json()
@@ -86,7 +100,7 @@ class TradingAgentsClient:
         """Download validation_report.json for a completed report."""
         response = requests.get(
             f"{self.base_url}/v1/reports/{job_id}/validation",
-            headers=self.headers
+            headers=self.headers,
         )
         response.raise_for_status()
         return response.json()
@@ -95,7 +109,7 @@ class TradingAgentsClient:
         """Download decision_evidence_bundle.json for a completed report."""
         response = requests.get(
             f"{self.base_url}/v1/reports/{job_id}/evidence",
-            headers=self.headers
+            headers=self.headers,
         )
         response.raise_for_status()
         return response.json()
@@ -112,7 +126,7 @@ class TradingAgentsClient:
         """
         response = requests.get(
             f"{self.base_url}/v1/reports/{job_id}",
-            headers=self.headers
+            headers=self.headers,
         )
         response.raise_for_status()
         return response.json()
@@ -130,18 +144,16 @@ class TradingAgentsClient:
         """
         response = requests.get(
             f"{self.base_url}/v1/reports/{job_id}/pdf",
-            headers=self.headers
+            headers=self.headers,
         )
 
         if response.status_code == 200:
             with open(filename, 'wb') as f:
                 f.write(response.content)
             return True
-        elif response.status_code == 409:
-            # Job not completed yet
+        if response.status_code == 409:
             return False
-        else:
-            response.raise_for_status()
+        response.raise_for_status()
 
     def wait_for_completion(self, job_id, timeout=300, poll_interval=10):
         """
@@ -162,43 +174,70 @@ class TradingAgentsClient:
 
             if status['status'] == 'completed':
                 return status
-            elif status['status'] == 'failed':
+            if status['status'] == 'failed':
                 raise Exception(f"Job failed: {status.get('error', 'Unknown error')}")
-            else:
-                print(f"Job status: {status['status']}")
-                time.sleep(poll_interval)
+            print(f"Job status: {status['status']}")
+            time.sleep(poll_interval)
 
         raise Exception("Job timeout exceeded")
 
 
+def _parse_target(value: str) -> dict:
+    """Parse ``sector:mining`` or ``commodity:gold`` into API target payload."""
+    if ":" not in value:
+        raise ValueError("target must be type:value, e.g. sector:mining")
+    target_type, target_value = value.split(":", 1)
+    return {"type": target_type.strip().lower(), "value": target_value.strip().lower()}
+
+
 def main():
     """Example usage of the TradingAgents client."""
-    # Configuration
+    parser = argparse.ArgumentParser(description="TradingAgents service client example")
+    parser.add_argument("--ticker", help="Equity ticker, e.g. NVDA")
+    parser.add_argument(
+        "--target",
+        help="Thematic target as type:value, e.g. sector:mining or commodity:gold",
+    )
+    parser.add_argument("--analysis-date", default="2026-07-31")
+    parser.add_argument(
+        "--analysts",
+        default="market,social,news",
+        help="Comma-separated analysts",
+    )
+    args = parser.parse_args()
+
+    if not args.ticker and not args.target:
+        parser.error("provide --ticker or --target")
+    if args.ticker and args.target:
+        parser.error("provide either --ticker or --target, not both")
+
     base_url = os.getenv("TRADINGAGENTS_SERVICE_URL", "http://localhost:8000")
     api_key = os.getenv("TRADINGAGENTS_SERVICE_API_KEY", "change-me-in-production")
 
-    # Create client
     client = TradingAgentsClient(base_url, api_key)
+    analysts = [item.strip() for item in args.analysts.split(",") if item.strip()]
 
-    # Submit a report job
     print("Submitting report job...")
-    job = client.submit_report(
-        ticker="NVDA",
-        analysis_date="2026-05-07",
-        analysts=["market", "social", "news", "fundamentals"],
-        report_tier="pro",
-        max_debate_rounds=1,
-        max_risk_discuss_rounds=1
-    )
+    submit_kwargs = {
+        "analysis_date": args.analysis_date,
+        "analysts": analysts,
+        "report_tier": "pro",
+        "max_debate_rounds": 1,
+        "max_risk_discuss_rounds": 1,
+    }
+    if args.target:
+        submit_kwargs["target"] = _parse_target(args.target)
+    else:
+        submit_kwargs["ticker"] = args.ticker
+
+    job = client.submit_report(**submit_kwargs)
     print(f"Job submitted: {job['job_id']}")
 
-    # Wait for completion
     print("Waiting for job completion...")
     try:
-        client.wait_for_completion(job['job_id'])
-        print("Job completed successfully!")
+        status = client.wait_for_completion(job['job_id'])
+        print(f"Job completed: subject={status.get('ticker')}")
 
-        # Download the PDF
         pdf_filename = f"report_{job['job_id']}.pdf"
         if client.download_pdf(job['job_id'], pdf_filename):
             print(f"PDF downloaded to: {pdf_filename}")

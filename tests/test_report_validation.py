@@ -6,7 +6,7 @@ import pytest
 
 from tradingagents.agents.schemas import (
     PortfolioDecision,
-    PortfolioRating,
+    ResearchRecommendation,
     render_pm_decision,
 )
 from tradingagents.reporting import write_report_tree
@@ -255,8 +255,8 @@ class TestReportValidation:
         )
         final_decision = render_pm_decision(
             PortfolioDecision(
-                rating=PortfolioRating.HOLD,
-                executive_summary="Maintain current posture pending better evidence.",
+                recommendation=ResearchRecommendation.WATCHLIST,
+                synthesis="Maintain current posture pending better evidence.",
                 investment_thesis="The evidence is balanced and unresolved risks remain.",
             )
         )
@@ -344,7 +344,7 @@ class TestReportValidation:
         assert result.status == "blocked"
         assert any(issue.code == "STALE_MARKET_DATA" for issue in result.blocking_issues)
 
-    def test_stale_status_is_hard_recommendation_blocker(self):
+    def test_stale_within_threshold_is_not_blocking(self):
         result = validate_final_state(
             _state(
                 market_data_freshness={
@@ -360,8 +360,9 @@ class TestReportValidation:
                 }
             )
         )
-        assert result.status == "blocked"
-        assert any(issue.code == "STALE_MARKET_DATA" for issue in result.blocking_issues)
+        assert not any(
+            issue.code == "STALE_MARKET_DATA" for issue in result.blocking_issues
+        )
 
     def test_directional_rating_requires_verified_fundamentals(self):
         result = validate_final_state(
@@ -763,9 +764,10 @@ class TestReportWriterValidation:
             encoding="utf-8"
         )
 
-        assert "**Rating**: Insufficient Evidence" in complete_report
-        assert "**Action**: No current transaction" in complete_report
+        assert "Insufficient evidence" in complete_report or "INSUFFICIENT_EVIDENCE" in complete_report
+        assert "No current transaction" in complete_report
         assert "**Rating**: Underweight" not in complete_report
+        assert "**Recommendation**: Underweight" not in complete_report
         assert "**Rating**: Underweight" not in published_decision
 
     def test_strict_validation_blocks_publication(self, tmp_path):

@@ -381,7 +381,9 @@ class TradingAgentsGraph:
     def _run_graph(self, company_name, trade_date, asset_type: str = "stock"):
         """Execute the graph and write the resulting state to disk and memory log."""
         validated_lessons = self.memory_log.get_validated_lessons(company_name)
-        instrument_context = self.resolve_instrument_context(company_name, asset_type)
+        instrument_context = self.config.get("instrument_context_override")
+        if not instrument_context:
+            instrument_context = self.resolve_instrument_context(company_name, asset_type)
         init_agent_state = self.propagator.create_initial_state(
             company_name,
             trade_date,
@@ -392,6 +394,8 @@ class TradingAgentsGraph:
             vein_context_bundle=self.config.get("vein_context_bundle") or {},
             vein_intelligence_bundle=self.config.get("vein_intelligence_bundle") or {},
             vein_intelligence_briefs=self.config.get("vein_intelligence_briefs") or {},
+            vein_intelligence_target=self.config.get("vein_intelligence_target") or {},
+            report_display_label=self.config.get("report_display_label") or "",
         )
         args = self.propagator.get_graph_args(callbacks=self.callbacks or None)
 

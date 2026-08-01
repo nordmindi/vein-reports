@@ -1,5 +1,6 @@
 """Report validation helpers for publication gating."""
 
+from .build_technical_validation import attach_technical_validation, build_technical_validation
 from .claims import DownstreamClaim, extract_downstream_claims, rejected_claims, verified_claims
 from .dashboard import DashboardModel, build_dashboard_model, validate_dashboard_consistency
 from .evidence import (
@@ -34,10 +35,12 @@ __all__ = [
     "HistoricalLesson",
     "ValidationIssue",
     "ValidationResult",
+    "attach_technical_validation",
     "bearish_divergence",
     "bollinger_squeeze_valid",
     "build_dashboard_model",
     "build_decision_evidence_bundle",
+    "build_technical_validation",
     "bullish_divergence",
     "check_market_data_freshness",
     "check_news_retrieval",

@@ -34,7 +34,7 @@ def create_lite_decision_agent(llm):
 
         analyst_section = "\n\n".join(sections) if sections else "(No analyst reports available)"
 
-        prompt = f"""As a concise equity analyst, produce a final trading decision using only the analyst report(s) below.
+        prompt = f"""As a concise equity analyst, produce a final research recommendation using only the analyst report(s) below.
 
 {instrument_context}
 
@@ -44,10 +44,11 @@ def create_lite_decision_agent(llm):
 
 ---
 
-**Rating Scale** (use exactly one):
-- **Buy**, **Overweight**, **Hold**, **Underweight**, **Sell**, or **Insufficient Evidence**
+**Allowed recommendations** (use exactly one):
+- **No current transaction**, **Watchlist**, **Trade candidate**, **Research only**, or **Insufficient evidence**
 
-Prefer Insufficient Evidence when core market data are stale, missing, or unauditable.
+Prefer Insufficient evidence when core market data are stale, missing, or unauditable.
+Do not output Buy, Sell, Overweight, Underweight, entry levels, stop loss, take profit, or position sizing.
 Use neutral, professional language.{get_language_instruction()}"""
 
         final_trade_decision = invoke_structured_or_freetext(

@@ -32,7 +32,8 @@ RECOMMENDATION_LINE_RE = re.compile(
     r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?"
     r"(recommendation|rating|action|final transaction proposal)"
     r"(?:\*\*)?\s*[:\-]\s*(?:\*\*)?"
-    r"(buy|sell|hold|overweight|underweight|insufficient evidence|accumulate|reduce)"
+    r"(buy|sell|hold|overweight|underweight|insufficient evidence|accumulate|reduce|"
+    r"no current transaction|watchlist|trade candidate|research only)"
 )
 
 FINAL_PROPOSAL_RE = re.compile(
@@ -129,8 +130,10 @@ def validate_final_state(
     issues.extend(_validate_neutral_language(final_state))
     issues = _dedupe_issues(issues)
 
-    if any(issue.severity == "blocking" for issue in issues):
-        status = "blocked"
+    blocking = [issue for issue in issues if issue.severity == "blocking"]
+    if blocking:
+        signal_only = all(issue.code == "SIGNAL_SERVICE_BLOCKS_TRADE" for issue in blocking)
+        status = "research_only" if signal_only else "blocked"
     elif issues:
         status = "verified_with_warnings" if strict_mode else "research_only"
     else:
@@ -247,8 +250,13 @@ def _validate_market_data_freshness(final_state: dict) -> list[ValidationIssue]:
         ]
 
     status = freshness.get("freshness_status")
-    if status == "fresh" and freshness.get("recommendation_allowed") is not False:
+    if status == "fresh":
         return []
+    if status == "stale":
+        sessions_stale = freshness.get("sessions_stale")
+        max_old = freshness.get("max_completed_sessions_old", 2)
+        if sessions_stale is not None and int(sessions_stale) <= int(max_old):
+            return []
 
     message = "; ".join(freshness.get("warnings") or [])
     if not message:
@@ -658,7 +666,7 @@ def _validate_decision_recommendations(
                 code="FINAL_RECOMMENDATION_MISSING",
                 severity="blocking" if strict_mode else "warning",
                 location="final_trade_decision",
-                message="No final Portfolio Manager rating was found.",
+                message="No final Portfolio Manager recommendation was found.",
             )
         ]
 
@@ -680,7 +688,7 @@ def _validate_decision_recommendations(
                     code="FINAL_RECOMMENDATION_MISSING",
                     severity="blocking",
                     location="final_trade_decision",
-                    message="Strict mode requires exactly one Portfolio Manager rating.",
+                    message="Strict mode requires exactly one Portfolio Manager recommendation.",
                 )
             )
         if unauthorized:

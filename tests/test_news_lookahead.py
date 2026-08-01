@@ -74,6 +74,6 @@ def test_global_news_empty_after_filter_is_informative(monkeypatch):
             self.news = [only_future]
 
     monkeypatch.setattr(ynews.yf, "Search", FakeSearch)
-    out = ynews.get_global_news_yfinance("2025-05-09", look_back_days=7, limit=10)
-    assert "No global news found" in out
-    assert "###" not in out  # no empty article body
+    with pytest.raises(ynews.NoMarketDataError) as excinfo:
+        ynews.get_global_news_yfinance("2025-05-09", look_back_days=7, limit=10)
+    assert "no global news in window" in str(excinfo.value.detail)

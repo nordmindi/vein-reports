@@ -1,4 +1,31 @@
+import json
+
 from .alpha_vantage_common import _make_api_request, format_datetime_for_api
+from .errors import NoMarketDataError
+
+
+def _ensure_news_payload(payload, *, symbol: str, detail: str):
+    """Raise NoMarketDataError when Alpha Vantage returns an empty news feed."""
+    if payload is None:
+        raise NoMarketDataError(symbol, symbol, detail)
+
+    parsed = payload
+    if isinstance(payload, str):
+        text = payload.strip()
+        if not text or text in {"{}", "[]", "null"}:
+            raise NoMarketDataError(symbol, symbol, detail)
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return payload
+
+    if isinstance(parsed, dict):
+        feed = parsed.get("feed")
+        if isinstance(feed, list) and len(feed) == 0:
+            raise NoMarketDataError(symbol, symbol, detail)
+        if "feed" not in parsed:
+            raise NoMarketDataError(symbol, symbol, detail)
+    return payload
 
 
 def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
@@ -21,7 +48,12 @@ def get_news(ticker, start_date, end_date) -> dict[str, str] | str:
         "time_to": format_datetime_for_api(end_date),
     }
 
-    return _make_api_request("NEWS_SENTIMENT", params)
+    payload = _make_api_request("NEWS_SENTIMENT", params)
+    return _ensure_news_payload(
+        payload,
+        symbol=ticker,
+        detail=f"no Alpha Vantage news between {start_date} and {end_date}",
+    )
 
 def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict[str, str] | str:
     """Returns global market news & sentiment data without ticker-specific filtering.
@@ -50,7 +82,12 @@ def get_global_news(curr_date, look_back_days: int = 7, limit: int = 50) -> dict
         "limit": str(limit),
     }
 
-    return _make_api_request("NEWS_SENTIMENT", params)
+    payload = _make_api_request("NEWS_SENTIMENT", params)
+    return _ensure_news_payload(
+        payload,
+        symbol="GLOBAL",
+        detail=f"no Alpha Vantage global news between {start_date} and {curr_date}",
+    )
 
 
 def get_insider_transactions(symbol: str) -> dict[str, str] | str:

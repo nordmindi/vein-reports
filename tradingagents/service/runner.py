@@ -28,7 +28,10 @@ from tradingagents.reporting import (
 )
 from tradingagents.integrations.intelligence_target import (
     IntelligenceTarget,
+    build_thematic_instrument_context,
     is_equity_like_target,
+    resolve_asset_type,
+    resolve_display_label,
     resolve_report_subject,
 )
 from tradingagents.service.tier_profiles import apply_tier_profile
@@ -319,6 +322,21 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         config["vein_intelligence_briefs"] = intelligence_briefs
     if request.intelligence_target:
         config["vein_intelligence_target"] = request.intelligence_target.to_payload()
+        primary_symbol = (
+            intelligence_bundle.get("primary_symbol")
+            if isinstance(intelligence_bundle, dict)
+            else None
+        )
+        config["instrument_context_override"] = build_thematic_instrument_context(
+            subject=ticker,
+            target=request.intelligence_target,
+            primary_symbol=str(primary_symbol) if primary_symbol else None,
+        )
+        config["report_display_label"] = resolve_display_label(
+            subject=ticker,
+            target=request.intelligence_target,
+            intelligence_bundle=intelligence_bundle,
+        )
     config["golden_trend_signal"] = golden_trend_signal or {}
     config["llm_cache_namespace"] = f"{ticker}:{request.analysis_date}"
 
@@ -338,8 +356,13 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         analysisDate=request.analysis_date,
     )
     propagation_started = time.perf_counter()
+    asset_type = resolve_asset_type(request.intelligence_target)
     try:
-        final_state, decision = graph.propagate(ticker, request.analysis_date)
+        final_state, decision = graph.propagate(
+            ticker,
+            request.analysis_date,
+            asset_type=asset_type,
+        )
         log_info("report_propagation_completed", jobId=job_id, decision=decision)
     except Exception as exc:
         error_msg = str(exc)
@@ -358,6 +381,10 @@ def run_report_job(request: ReportRequest, job_id: str | None = None) -> ReportR
         final_state["vein_intelligence_bundle"] = config.get("vein_intelligence_bundle") or {}
     if config.get("vein_intelligence_briefs"):
         final_state["vein_intelligence_briefs"] = config.get("vein_intelligence_briefs") or {}
+    if config.get("vein_intelligence_target"):
+        final_state["vein_intelligence_target"] = config.get("vein_intelligence_target") or {}
+    if config.get("report_display_label"):
+        final_state["report_display_label"] = config.get("report_display_label")
 
     report_root = Path(os.getenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", "reports/api")).resolve()
     report_dir = report_root / job_id

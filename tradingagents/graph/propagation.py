@@ -26,6 +26,8 @@ class Propagator:
         vein_context_bundle: dict | None = None,
         vein_intelligence_bundle: dict | None = None,
         vein_intelligence_briefs: dict | None = None,
+        vein_intelligence_target: dict | None = None,
+        report_display_label: str | None = None,
     ) -> dict[str, Any]:
         """Create the initial state for the agent graph."""
         return {
@@ -39,6 +41,8 @@ class Propagator:
             "vein_context_bundle": vein_context_bundle or {},
             "vein_intelligence_bundle": vein_intelligence_bundle or {},
             "vein_intelligence_briefs": vein_intelligence_briefs or {},
+            "vein_intelligence_target": vein_intelligence_target or {},
+            "report_display_label": report_display_label or "",
             "investment_debate_state": InvestDebateState(
                 {
                     "bull_history": "",

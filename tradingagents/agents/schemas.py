@@ -42,7 +42,7 @@ def _coerce_optional_float(value):
 
 
 class PortfolioRating(str, Enum):
-    """5-tier rating used by the Research Manager and Portfolio Manager."""
+    """5-tier rating used by the Research Manager and Trader."""
 
     BUY = "Buy"
     OVERWEIGHT = "Overweight"
@@ -51,13 +51,24 @@ class PortfolioRating(str, Enum):
     SELL = "Sell"
 
 
+class ResearchRecommendation(str, Enum):
+    """Research stance produced by the Portfolio Manager synthesis."""
+
+    NO_CURRENT_TRANSACTION = "No current transaction"
+    WATCHLIST = "Watchlist"
+    TRADE_CANDIDATE = "Trade candidate"
+    RESEARCH_ONLY = "Research only"
+    INSUFFICIENT_EVIDENCE = "Insufficient evidence"
+
+
 class TraderAction(str, Enum):
     """3-tier transaction direction used by the Trader.
 
     The Trader's job is to translate the Research Manager's investment plan
     into a concrete transaction proposal: should the desk execute a Buy, a
     Sell, or sit on Hold this round.  Position sizing and the nuanced
-    Overweight / Underweight calls happen later at the Portfolio Manager.
+    Overweight / Underweight calls remain research-manager / trader context;
+    the Portfolio Manager publishes a research recommendation instead.
     """
 
     BUY = "Buy"
@@ -186,67 +197,70 @@ def render_trader_proposal(proposal: TraderProposal) -> str:
 
 
 class PortfolioDecision(BaseModel):
-    """Structured output produced by the Portfolio Manager.
+    """Structured synthesis produced by the Portfolio Manager.
 
-    The model fills every field as part of its primary LLM call; no separate
-    extraction pass is required. Field descriptions double as the model's
-    output instructions, so the prompt body only needs to convey context and
-    the rating-scale guidance.
+    The Portfolio Manager acts as a research committee chair: it summarizes
+    analyst perspectives and publishes a research recommendation, not a
+    buy/sell trading signal.
     """
 
-    rating: PortfolioRating = Field(
+    recommendation: ResearchRecommendation = Field(
         description=(
-            "The final position rating. Exactly one of Buy / Overweight / Hold / "
-            "Underweight / Sell, picked based on the analysts' debate."
+            "The final research recommendation. Exactly one of: "
+            "No current transaction / Watchlist / Trade candidate / "
+            "Research only / Insufficient evidence."
         ),
     )
-    executive_summary: str = Field(
+    synthesis: str = Field(
         description=(
-            "A concise action plan covering entry strategy, position sizing, "
-            "key risk levels, and time horizon. Two to four sentences."
+            "Short synthesis comparing supportive and cautionary evidence "
+            "from market, fundamentals, news, sentiment, signal service, "
+            "and risk. Two to four sentences."
         ),
     )
     investment_thesis: str = Field(
         description=(
-            "Detailed reasoning anchored in specific evidence from the analysts' "
-            "debate. If prior lessons are referenced in the prompt context, "
-            "incorporate them; otherwise rely solely on the current analysis."
+            "One-paragraph thesis explaining what is happening and why it "
+            "matters, anchored in validated evidence from the current run."
         ),
     )
-    price_target: float | None = Field(
-        default=None,
-        description="Optional target price in the instrument's quote currency.",
+    key_supportive_points: list[str] = Field(
+        default_factory=list,
+        description="Three to five concise supportive evidence points.",
     )
-    time_horizon: str | None = Field(
-        default=None,
-        description="Optional recommended holding period, e.g. '3-6 months'.",
+    key_caution_points: list[str] = Field(
+        default_factory=list,
+        description="Three to five concise cautionary evidence points.",
     )
-
-    @field_validator("price_target", mode="before")
-    @classmethod
-    def _nullish_float_to_none(cls, v):
-        return _coerce_optional_float(v)
+    required_confirmations: list[str] = Field(
+        default_factory=list,
+        description="Conditions that would change the research stance.",
+    )
+    confidence: Literal["low", "medium", "high"] = Field(
+        default="medium",
+        description="Confidence in the synthesis given evidence quality.",
+    )
 
 
 def render_pm_decision(decision: PortfolioDecision) -> str:
-    """Render a PortfolioDecision back to the markdown shape the rest of the system expects.
-
-    Memory log, CLI display, and saved report files all read this markdown,
-    so the rendered output preserves the exact section headers (``**Rating**``,
-    ``**Executive Summary**``, ``**Investment Thesis**``) that downstream
-    parsers and the report writers already handle.
-    """
+    """Render a PortfolioDecision back to markdown for memory log and reports."""
     parts = [
-        f"**Rating**: {decision.rating.value}",
+        f"**Recommendation**: {decision.recommendation.value}",
         "",
-        f"**Executive Summary**: {decision.executive_summary}",
+        f"**Synthesis**: {decision.synthesis}",
         "",
         f"**Investment Thesis**: {decision.investment_thesis}",
     ]
-    if decision.price_target is not None:
-        parts.extend(["", f"**Price Target**: {decision.price_target}"])
-    if decision.time_horizon:
-        parts.extend(["", f"**Time Horizon**: {decision.time_horizon}"])
+    if decision.key_supportive_points:
+        parts.extend(["", "**Key Supportive Points**:"])
+        parts.extend(f"- {point}" for point in decision.key_supportive_points)
+    if decision.key_caution_points:
+        parts.extend(["", "**Key Caution Points**:"])
+        parts.extend(f"- {point}" for point in decision.key_caution_points)
+    if decision.required_confirmations:
+        parts.extend(["", "**What Would Change the Decision**:"])
+        parts.extend(f"- {item}" for item in decision.required_confirmations)
+    parts.extend(["", f"**Confidence**: {decision.confidence.title()}"])
     return "\n".join(parts)
 
 

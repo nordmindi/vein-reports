@@ -201,36 +201,58 @@ class MarkdownPDFGenerator:
         text = display_text(text)
         return re.sub(r"\s{3,}", " ", text).strip()
 
-    def add_highlights_page(self, md_text, dashboard_metrics=None):
-        metrics = dashboard_metrics or self._metrics_from_markdown(md_text)
-
+    def add_executive_summary_page(self, summary_text: str):
         self.pdf.add_page()
         self.pdf.set_font("helvetica", "B", 20)
         self.pdf.set_text_color(*self.colors["ink"])
-        self.pdf.cell(self.pdf.content_width, 10, "Executive Dashboard", ln=True)
+        self.pdf.cell(self.pdf.content_width, 10, "Executive Summary", ln=True)
 
         self.pdf.set_font("helvetica", "", 8.5)
         self.pdf.set_text_color(*self.colors["muted"])
         self.pdf.multi_cell(
             self.pdf.content_width,
             5,
-            "Canonical report summary generated from validation and final portfolio decision data.",
+            "Curated report summary: status, thesis, key evidence, signal service, and portfolio synthesis.",
         )
         self.pdf.ln(4)
+        self._render_executive_summary_body(summary_text)
 
-        start_y = self.pdf.get_y()
-        card_w = (self.pdf.content_width - 8) / 2
-        card_h = 31
-        row_gap = 7
-        col_gap = 8
+    def add_highlights_page(self, md_text, dashboard_metrics=None):
+        """Deprecated: use add_executive_summary_page."""
+        summary = self._executive_summary_from_metrics(md_text, dashboard_metrics)
+        self.add_executive_summary_page(summary)
 
-        for i, (label, val) in enumerate(metrics.items()):
-            x = self.pdf.l_margin_val if i % 2 == 0 else self.pdf.l_margin_val + card_w + col_gap
-            y = start_y + (i // 2) * (card_h + row_gap)
-            self._dashboard_card(x, y, card_w, card_h, label, val)
+    def _executive_summary_from_metrics(self, md_text, dashboard_metrics=None):
+        metrics = dashboard_metrics or self._metrics_from_markdown(md_text)
+        lines = [
+            f"Report Status: {metrics.get('Status', self.pdf.status_label)}",
+            f"Final Recommendation: {metrics.get('Recommendation', 'N/A')}",
+            f"Action: {metrics.get('Action', 'N/A')}",
+            f"Target: {metrics.get('Target', 'N/A')}",
+        ]
+        return "\n".join(lines)
 
-        rows = (len(metrics) + 1) // 2
-        self.pdf.set_y(start_y + rows * (card_h + row_gap) + 5)
+    def _render_executive_summary_body(self, summary_text: str):
+        for raw in summary_text.split("\n"):
+            line = self._clean_line(raw.strip())
+            if not line:
+                self.pdf.ln(2)
+                continue
+            if raw.strip().startswith("## "):
+                continue
+            if raw.strip().startswith("**") and raw.strip().endswith("**") and ":" not in raw:
+                self._render_h3(line.strip("*"))
+                continue
+            if raw.strip().startswith("**") and ":" in raw:
+                self.pdf.set_font("helvetica", "B", 9.5)
+                self.pdf.set_text_color(*self.colors["navy"])
+                self.pdf.multi_cell(self.pdf.content_width, 5.8, line)
+                self.pdf.ln(0.8)
+                continue
+            if raw.strip().startswith("- ") or raw.strip().startswith("* "):
+                self._render_bullet(line[2:] if line.startswith("- ") else line)
+                continue
+            self._render_paragraph(line)
 
     def _dashboard_card(self, x, y, width, height, label, value):
         self.pdf.set_fill_color(*self.colors["surface"])

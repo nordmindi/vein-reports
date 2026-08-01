@@ -18,6 +18,7 @@ from tradingagents.agents.managers.research_manager import create_research_manag
 from tradingagents.agents.schemas import (
     PortfolioDecision,
     PortfolioRating,
+    ResearchRecommendation,
     ResearchPlan,
     SentimentBand,
     SentimentReport,
@@ -170,14 +171,17 @@ class TestNullishFloatCoercion:
         p = TraderProposal(action=TraderAction.BUY, reasoning="x", entry_price="189.5")
         assert p.entry_price == 189.5
 
-    def test_pm_nullish_price_target_coerces_to_none(self):
+    def test_pm_research_recommendation_renders(self):
         d = PortfolioDecision(
-            rating=PortfolioRating.OVERWEIGHT,
-            executive_summary="s",
-            investment_thesis="t",
-            price_target="N/A",
+            recommendation=ResearchRecommendation.WATCHLIST,
+            synthesis="Interesting setup; await confirmation.",
+            investment_thesis="Evidence is mixed but improving.",
         )
-        assert d.price_target is None
+        from tradingagents.agents.schemas import render_pm_decision
+
+        md = render_pm_decision(d)
+        assert "**Recommendation**: Watchlist" in md
+        assert "**Synthesis**: Interesting setup" in md
 
 
 @pytest.mark.unit

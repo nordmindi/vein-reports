@@ -125,3 +125,44 @@ def test_writes_report_when_model_stops_calling_tools():
         report_key="market_report",
     )
     assert out["market_report"] == "Completed without more tools."
+
+
+class _BlankFinalLLM:
+    def bind_tools(self, tools):
+        class _Bound:
+            def invoke(self, messages):
+                return AIMessage(content="")
+
+        return _Bound()
+
+    def invoke(self, messages):
+        return AIMessage(content="")
+
+
+@pytest.mark.unit
+def test_synthesizes_report_from_tool_results_when_model_blank():
+    messages = [
+        HumanMessage(content="Analyze NVDA"),
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "get_news",
+                    "args": {"ticker": "NVDA"},
+                    "id": "prior",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        SimpleNamespace(content="## NVDA News\n\nBig GPU demand story.", tool_call_id="prior"),
+    ]
+    out = invoke_analyst_with_tools(
+        llm=_BlankFinalLLM(),
+        prompt=_FakePrompt(),
+        tools=[],
+        messages=messages,
+        max_tool_rounds=2,
+        report_key="news_report",
+    )
+    assert "Big GPU demand story" in out["news_report"]
+    assert "News Report" in out["news_report"]

@@ -39,6 +39,9 @@ class HierarchyTests(unittest.TestCase):
         self.assertTrue(issubclass(AlphaVantageRateLimitError, VendorRateLimitError))
         self.assertTrue(issubclass(AlphaVantageNotConfiguredError, VendorNotConfiguredError))
         self.assertTrue(issubclass(FredNotConfiguredError, VendorNotConfiguredError))
+        from tradingagents.dataflows.finnhub_news import FinnhubNotConfiguredError
+
+        self.assertTrue(issubclass(FinnhubNotConfiguredError, VendorNotConfiguredError))
         # ... and therefore still ValueErrors
         self.assertTrue(issubclass(FredNotConfiguredError, ValueError))
 

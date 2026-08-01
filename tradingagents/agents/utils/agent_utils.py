@@ -43,6 +43,8 @@ __all__ = [
     "resolve_instrument_identity",
     "get_instrument_context_from_state",
     "get_language_instruction",
+    "get_non_authoritative_analyst_instruction",
+    "get_neutral_debate_language_instruction",
     "create_msg_delete",
 ]
 
@@ -63,6 +65,27 @@ def get_language_instruction() -> str:
     if lang.strip().lower() == "english":
         return ""
     return f" Write your entire response in {lang}."
+
+
+def get_non_authoritative_analyst_instruction(role_label: str) -> str:
+    """Ban transaction authority language in specialist analyst briefs."""
+    return (
+        f" Do not output Buy, Sell, Overweight, Underweight, entry/stop/target levels, "
+        f"position sizing, or any FINAL TRANSACTION PROPOSAL — this is a {role_label} only; "
+        "the Portfolio Manager owns the final research recommendation. "
+        "Use neutral, professional language — avoid hype and inevitability wording "
+        "(e.g. catastrophic, inevitable, guaranteed, screaming sell signal)."
+    )
+
+
+def get_neutral_debate_language_instruction() -> str:
+    """Ban dramatic / transaction phrasing in risk-debate turns."""
+    return (
+        " Use neutral, professional, falsifiable language. Avoid hype and inevitability "
+        "wording (e.g. catastrophic, inevitable, guaranteed, slam dunk, screaming sell "
+        "signal). Do not output FINAL TRANSACTION PROPOSAL or a Buy/Sell rating — debate "
+        "risk trade-offs only."
+    )
 
 
 def _clean_identity_value(value: Any) -> str | None:

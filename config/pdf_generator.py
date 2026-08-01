@@ -368,7 +368,7 @@ class PDFGenerator:
         pdf.add_page()
         pdf.set_font("helvetica", "B", 20)
         pdf.set_text_color(*pdf.colors["ink"])
-        pdf.cell(pdf.content_width, 10, "Executive Dashboard", ln=True)
+        pdf.cell(pdf.content_width, 10, "Executive Summary", ln=True)
         pdf.set_font("helvetica", "", 8.5)
         pdf.set_text_color(*pdf.colors["muted"])
         pdf.multi_cell(pdf.content_width, 5, "Compact summary of signal, sentiment, confidence, and risk.")

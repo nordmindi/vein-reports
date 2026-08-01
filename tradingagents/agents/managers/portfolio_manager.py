@@ -41,19 +41,20 @@ def create_portfolio_manager(llm):
             else ""
         )
 
-        prompt = f"""As the Portfolio Manager, synthesize the risk analysts' debate and deliver the final trading decision.
+        prompt = f"""As the Portfolio Manager Synthesis Agent, summarize the risk analysts' debate and deliver the final research recommendation.
 
 {instrument_context}
 
 ---
 
-**Rating Scale** (use exactly one):
-- **Buy**: Strong conviction to enter or add to position
-- **Overweight**: Favorable outlook, gradually increase exposure
-- **Hold**: Maintain current position, no action needed
-- **Underweight**: Reduce exposure, take partial profits
-- **Sell**: Exit position or avoid entry
-- **Insufficient Evidence**: Do not recommend a transaction because core evidence is stale, missing, unauditable, or internally unsupported
+**Allowed recommendations** (use exactly one):
+- **No current transaction**: Evidence does not support any action now
+- **Watchlist**: Interesting setup, but not yet actionable
+- **Trade candidate**: Evidence supports further research toward a trade (only when validation would permit)
+- **Research only**: Useful context without a stance change
+- **Insufficient evidence**: Core evidence is stale, missing, unauditable, or internally unsupported
+
+Do not output Buy, Sell, Overweight, Underweight, entry levels, stop loss, take profit, or position sizing.
 
 **Context:**
 - Research Manager's evidence synthesis: **{research_plan}**
@@ -66,7 +67,7 @@ def create_portfolio_manager(llm):
 
 Use only canonical evidence available in the current analyst reports, research synthesis, trader context, and risk debate.
 Treat research and trader text as non-final context, not as transaction authority.
-Prefer Insufficient Evidence over any directional rating when market data are stale, current fundamentals are missing, metrics are not present in the active report, historical lessons are not auditable, or a price target lacks a documented valuation method.
+Prefer Insufficient evidence over a stronger stance when market data are stale, current fundamentals are missing, metrics are not present in the active report, historical lessons are not auditable, or claims lack validated support.
 Do not infer institutional buying, accumulation, distribution, or divergence unless those claims are explicitly validated in the current evidence.
 Use neutral, professional, falsifiable language. Avoid hype, insults, tribal framing, inevitability wording, pressure-to-act phrasing, or phrases such as "smart money", "catastrophic", "extremely compelling", "very compelling", "clash violently", "massive mistake", "gambling", and "screaming sell signal".
 Ground every conclusion in specific verified evidence from the current run.{get_language_instruction()}"""

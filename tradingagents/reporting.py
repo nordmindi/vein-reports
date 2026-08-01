@@ -11,10 +11,18 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 from tradingagents.agents.utils.report_text import sanitize_agent_report_text
+from tradingagents.report_composition import (
+    FinalReport,
+    build_final_report,
+    render_final_report_markdown,
+    soften_rhetorical_language,
+    validate_blocked_report,
+)
 from tradingagents.validation import (
     DashboardModel,
     ValidationResult,
@@ -25,6 +33,7 @@ from tradingagents.validation import (
     validate_final_state,
     verified_claims,
 )
+from tradingagents.validation.build_technical_validation import attach_technical_validation
 
 
 def finalize_validation_artifacts(
@@ -36,10 +45,12 @@ def finalize_validation_artifacts(
     strict_validation: bool = False,
 ) -> tuple[ValidationResult, DashboardModel]:
     """Build and validate publication artifacts in final-gate order."""
+    _attach_technical_validation(final_state)
+    validation_state = _validation_state_view(final_state)
     _attach_claim_artifacts(final_state)
     if validation_result is None:
         validation_result = validate_final_state(
-            final_state,
+            validation_state,
             expected_analysts=expected_analysts,
             strict_mode=strict_validation,
         )
@@ -51,7 +62,7 @@ def finalize_validation_artifacts(
     dashboard_model = dashboard_model or build_dashboard_model(final_state, validation_result)
     final_state["dashboard_model"] = dashboard_model.model_dump(mode="json")
     validation_result = validate_final_state(
-        final_state,
+        validation_state,
         expected_analysts=expected_analysts,
         strict_mode=strict_validation,
     )
@@ -61,7 +72,7 @@ def finalize_validation_artifacts(
     evidence_bundle = build_decision_evidence_bundle(final_state, validation_result)
     final_state["decision_evidence_bundle"] = evidence_bundle.model_dump(mode="json")
     validation_result = validate_final_state(
-        final_state,
+        validation_state,
         expected_analysts=expected_analysts,
         strict_mode=strict_validation,
     )
@@ -69,7 +80,7 @@ def finalize_validation_artifacts(
         dashboard_model = rebuilt_dashboard
         final_state["dashboard_model"] = dashboard_model.model_dump(mode="json")
         validation_result = validate_final_state(
-            final_state,
+            validation_state,
             expected_analysts=expected_analysts,
             strict_mode=strict_validation,
         )
@@ -86,6 +97,7 @@ def write_report_tree(
     dashboard_model: DashboardModel | None = None,
     expected_analysts: tuple[str, ...] | list[str] | None = None,
     strict_validation: bool = False,
+    user_requested_full_report: bool = False,
 ) -> Path:
     """Save a completed run's reports to ``save_path``; return the complete-report path."""
     save_path = Path(save_path)
@@ -107,109 +119,96 @@ def write_report_tree(
         codes = ", ".join(issue.code for issue in validation_result.blocking_issues)
         raise ValueError(f"Report validation blocked publication: {codes}")
 
-    sections = []
+    _write_audit_report_tree(final_state, save_path, validation_result, dashboard_model)
 
+    final_report = build_final_report(
+        final_state,
+        ticker,
+        validation_result,
+        dashboard_model,
+        user_requested_full_report=user_requested_full_report,
+    )
+    violations = validate_blocked_report(final_report)
+    if violations:
+        raise ValueError(
+            "Blocked report contains forbidden transaction language: "
+            + ", ".join(violations)
+        )
+
+    write_final_report_artifacts(save_path, final_report)
+    report_path = save_path / "complete_report.md"
+    report_path.write_text(render_final_report_markdown(final_report), encoding="utf-8")
+    return report_path
+
+
+def _write_audit_report_tree(
+    final_state: dict,
+    save_path: Path,
+    validation_result: ValidationResult,
+    dashboard_model: DashboardModel,
+) -> None:
+    """Persist raw agent outputs for audit; excluded from the published report."""
     signal = final_state.get("golden_trend_signal")
     if isinstance(signal, dict) and signal:
         from tradingagents.integrations.signal_validation_section import (
-            render_signal_validation_markdown,
             write_signal_validation_artifacts,
         )
 
         write_signal_validation_artifacts(save_path, signal)
-        rendered = render_signal_validation_markdown(signal)
-        if rendered.strip():
-            sections.append(rendered)
 
-    # 1. Analysts
     analysts_dir = save_path / "1_analysts"
-    analyst_parts = []
-    if final_state.get("market_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        market_report = sanitize_agent_report_text(final_state["market_report"])
-        (analysts_dir / "market.md").write_text(market_report, encoding="utf-8")
-        analyst_parts.append(("Market Analyst", market_report))
-    if final_state.get("sentiment_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        sentiment_report = sanitize_agent_report_text(final_state["sentiment_report"])
-        (analysts_dir / "sentiment.md").write_text(sentiment_report, encoding="utf-8")
-        analyst_parts.append(("Sentiment Analyst", sentiment_report))
-    if final_state.get("news_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        news_report = sanitize_agent_report_text(final_state["news_report"])
-        (analysts_dir / "news.md").write_text(news_report, encoding="utf-8")
-        analyst_parts.append(("News Analyst", news_report))
-    if final_state.get("fundamentals_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        fundamentals_report = sanitize_agent_report_text(final_state["fundamentals_report"])
-        (analysts_dir / "fundamentals.md").write_text(fundamentals_report, encoding="utf-8")
-        analyst_parts.append(("Fundamentals Analyst", fundamentals_report))
-    if final_state.get("supply_chain_report"):
-        analysts_dir.mkdir(exist_ok=True)
-        supply_chain_report = sanitize_agent_report_text(final_state["supply_chain_report"])
-        (analysts_dir / "supply_chain.md").write_text(supply_chain_report, encoding="utf-8")
-        analyst_parts.append(("Supply Chain Analyst", supply_chain_report))
-    if analyst_parts:
-        content = "\n\n".join(f"### {name}\n{text}" for name, text in analyst_parts)
-        sections.append(f"## I. Analyst Team Reports\n\n{content}")
+    for key, filename in (
+        ("market_report", "market.md"),
+        ("sentiment_report", "sentiment.md"),
+        ("news_report", "news.md"),
+        ("fundamentals_report", "fundamentals.md"),
+        ("supply_chain_report", "supply_chain.md"),
+    ):
+        if final_state.get(key):
+            analysts_dir.mkdir(exist_ok=True)
+            (analysts_dir / filename).write_text(
+                sanitize_agent_report_text(final_state[key]),
+                encoding="utf-8",
+            )
 
-    # 2. Research
     if final_state.get("investment_debate_state"):
         research_dir = save_path / "2_research"
         debate = final_state["investment_debate_state"]
-        research_parts = []
-        if debate.get("bull_history"):
-            research_dir.mkdir(exist_ok=True)
-            bull_history = sanitize_agent_report_text(debate["bull_history"])
-            (research_dir / "bull.md").write_text(bull_history, encoding="utf-8")
-            research_parts.append(("Bull Researcher", bull_history))
-        if debate.get("bear_history"):
-            research_dir.mkdir(exist_ok=True)
-            bear_history = sanitize_agent_report_text(debate["bear_history"])
-            (research_dir / "bear.md").write_text(bear_history, encoding="utf-8")
-            research_parts.append(("Bear Researcher", bear_history))
-        if debate.get("judge_decision"):
-            research_dir.mkdir(exist_ok=True)
-            judge_decision = sanitize_agent_report_text(debate["judge_decision"])
-            (research_dir / "manager.md").write_text(judge_decision, encoding="utf-8")
-            research_parts.append(("Research Manager", judge_decision))
-        if research_parts:
-            content = "\n\n".join(f"### {name}\n{text}" for name, text in research_parts)
-            sections.append(f"## II. Research Team Decision\n\n{content}")
+        for key, filename in (
+            ("bull_history", "bull.md"),
+            ("bear_history", "bear.md"),
+            ("judge_decision", "manager.md"),
+        ):
+            if debate.get(key):
+                research_dir.mkdir(exist_ok=True)
+                (research_dir / filename).write_text(
+                    sanitize_agent_report_text(debate[key]),
+                    encoding="utf-8",
+                )
 
-    # 3. Trading
     if final_state.get("trader_investment_plan"):
         trading_dir = save_path / "3_trading"
         trading_dir.mkdir(exist_ok=True)
-        trader_plan = sanitize_agent_report_text(final_state["trader_investment_plan"])
-        (trading_dir / "trader.md").write_text(trader_plan, encoding="utf-8")
-        sections.append(f"## III. Trading Team Plan\n\n### Trader\n{trader_plan}")
+        (trading_dir / "trader.md").write_text(
+            sanitize_agent_report_text(final_state["trader_investment_plan"]),
+            encoding="utf-8",
+        )
 
-    # 4. Risk Management
     if final_state.get("risk_debate_state"):
         risk_dir = save_path / "4_risk"
         risk = final_state["risk_debate_state"]
-        risk_parts = []
-        if risk.get("aggressive_history"):
-            risk_dir.mkdir(exist_ok=True)
-            aggressive_history = sanitize_agent_report_text(risk["aggressive_history"])
-            (risk_dir / "aggressive.md").write_text(aggressive_history, encoding="utf-8")
-            risk_parts.append(("Aggressive Analyst", aggressive_history))
-        if risk.get("conservative_history"):
-            risk_dir.mkdir(exist_ok=True)
-            conservative_history = sanitize_agent_report_text(risk["conservative_history"])
-            (risk_dir / "conservative.md").write_text(conservative_history, encoding="utf-8")
-            risk_parts.append(("Conservative Analyst", conservative_history))
-        if risk.get("neutral_history"):
-            risk_dir.mkdir(exist_ok=True)
-            neutral_history = sanitize_agent_report_text(risk["neutral_history"])
-            (risk_dir / "neutral.md").write_text(neutral_history, encoding="utf-8")
-            risk_parts.append(("Neutral Analyst", neutral_history))
-        if risk_parts:
-            content = "\n\n".join(f"### {name}\n{text}" for name, text in risk_parts)
-            sections.append(f"## IV. Risk Management Team Decision\n\n{content}")
+        for key, filename in (
+            ("aggressive_history", "aggressive.md"),
+            ("conservative_history", "conservative.md"),
+            ("neutral_history", "neutral.md"),
+        ):
+            if risk.get(key):
+                risk_dir.mkdir(exist_ok=True)
+                (risk_dir / filename).write_text(
+                    sanitize_agent_report_text(risk[key]),
+                    encoding="utf-8",
+                )
 
-        # 5. Portfolio Manager
         if risk.get("judge_decision"):
             portfolio_dir = save_path / "5_portfolio"
             portfolio_dir.mkdir(exist_ok=True)
@@ -219,13 +218,14 @@ def write_report_tree(
                 dashboard_model=dashboard_model,
             )
             (portfolio_dir / "decision.md").write_text(portfolio_decision, encoding="utf-8")
-            sections.append(f"## V. Portfolio Manager Decision\n\n### Portfolio Manager\n{portfolio_decision}")
 
-    # Write consolidated report
-    header = f"# Trading Analysis Report: {ticker}\n\nGenerated: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
-    report_path = save_path / "complete_report.md"
-    report_path.write_text(header + "\n\n".join(sections), encoding="utf-8")
-    return report_path
+
+def write_final_report_artifacts(save_path: Path, final_report: FinalReport) -> None:
+    report_path = save_path / "final_report.json"
+    report_path.write_text(
+        json.dumps(final_report.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
 
 
 def save_report_to_disk(final_state: dict[str, Any], ticker: str, save_path: Path) -> Path:
@@ -240,12 +240,15 @@ def generate_pdf_from_markdown(
     *,
     validation_result: ValidationResult | None = None,
     dashboard_model: DashboardModel | None = None,
+    executive_summary: str | None = None,
 ) -> Path:
     """Generate a PDF report from an existing markdown report."""
     MarkdownPDFGenerator = _load_markdown_pdf_generator()
 
     content = sanitize_agent_report_text(md_path.read_text(encoding="utf-8"))
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    summary_text = executive_summary or _extract_executive_summary(content)
 
     generator = MarkdownPDFGenerator(
         ticker=ticker,
@@ -256,13 +259,34 @@ def generate_pdf_from_markdown(
             else "RESEARCH_OUTPUT"
         ),
     )
-    generator.add_highlights_page(
-        content,
-        dashboard_metrics=dashboard_model.pdf_metrics() if dashboard_model is not None else None,
-    )
-    generator.add_markdown_content(content)
+    generator.add_executive_summary_page(summary_text)
+    body = _pdf_body_without_executive_summary(content)
+    generator.add_markdown_content(body)
     generator.save(str(output_path))
     return output_path
+
+
+def _extract_executive_summary(content: str) -> str:
+    marker = "## Executive Summary"
+    if marker not in content:
+        return content[:2000]
+    start = content.index(marker)
+    remainder = content[start + len(marker) :]
+    next_heading = remainder.find("\n## ")
+    section = remainder if next_heading == -1 else remainder[:next_heading]
+    return marker + section.strip()
+
+
+def _pdf_body_without_executive_summary(content: str) -> str:
+    marker = "## Executive Summary"
+    if marker not in content:
+        return content
+    start = content.index(marker)
+    remainder = content[start + len(marker) :]
+    next_heading = remainder.find("\n## ")
+    if next_heading == -1:
+        return content[:start].strip()
+    return (content[:start] + remainder[next_heading:]).strip()
 
 
 def write_validation_report(save_path: Path, validation_result: ValidationResult) -> None:
@@ -308,6 +332,44 @@ def write_claim_reports(save_path: Path, final_state: dict) -> None:
     )
 
 
+def _attach_technical_validation(final_state: dict) -> None:
+    symbol = str(
+        final_state.get("company_of_interest")
+        or final_state.get("ticker")
+        or ""
+    ).strip()
+    trade_date = str(final_state.get("trade_date") or "").strip()
+    if not symbol or not trade_date:
+        return
+    attach_technical_validation(final_state, symbol, trade_date)
+
+
+def _validation_state_view(final_state: dict) -> dict:
+    """Copy of run state with rhetoric softened for publication validation only."""
+    view = deepcopy(final_state)
+    for key in (
+        "market_report",
+        "sentiment_report",
+        "news_report",
+        "fundamentals_report",
+        "investment_plan",
+        "trader_investment_plan",
+        "final_trade_decision",
+    ):
+        if view.get(key):
+            view[key] = soften_rhetorical_language(str(view[key]))
+
+    for debate_key in ("investment_debate_state", "risk_debate_state"):
+        debate = view.get(debate_key)
+        if not isinstance(debate, dict):
+            continue
+        for key, value in list(debate.items()):
+            if isinstance(value, str) and value:
+                debate[key] = soften_rhetorical_language(value)
+
+    return view
+
+
 def _attach_claim_artifacts(final_state: dict) -> None:
     final_state["verified_claims"] = [
         claim.model_dump(mode="json") for claim in verified_claims(final_state)
@@ -338,13 +400,13 @@ def _published_portfolio_decision(
 
     reason_lines = "\n".join(f"- {reason}." for reason in reasons)
     return (
-        "**Rating**: Insufficient Evidence\n\n"
+        "**Recommendation**: Insufficient Evidence\n\n"
         "**Action**: No current transaction\n\n"
-        "**Executive Summary**: The validation dashboard blocks transaction "
-        "authority for this report. Any raw directional Portfolio Manager "
-        "output from the model is treated as non-published research context, "
-        "not as an actionable recommendation.\n\n"
-        f"**Reason**:\n{reason_lines}"
+        "**Synthesis**: The validation layer blocks transaction authority for "
+        "this report. Any raw directional Portfolio Manager output from the "
+        "model is treated as non-published research context, not as an "
+        "actionable recommendation.\n\n"
+        f"**Blocking issues**:\n{reason_lines}"
     )
 
 

@@ -14,12 +14,78 @@ from tradingagents.report_composition.models import (
     ReportMode,
 )
 from tradingagents.report_composition.sanitizer import (
+    clean_publication_excerpt,
     is_agent_process_paragraph,
+    is_section_header_only,
     redact_forbidden_transaction_language,
     sanitize_for_publication,
     scan_blocked_report_text,
+    soften_rhetorical_language,
+    strip_agent_process_phrases,
     truncate_words,
 )
+
+
+def _publication_safe(text: str) -> str:
+    """Neutralize rhetoric and redact transaction terms for published copy."""
+    return soften_rhetorical_language(redact_forbidden_transaction_language(text))
+
+
+_MISSING_EVIDENCE_CODES = frozenset(
+    {
+        "FAILED_REQUIRED_AGENT",
+        "FINAL_RECOMMENDATION_MISSING",
+        "NEWS_VENDOR_COVERAGE_FAILURE",
+        "PEER_NEWS_FALLBACK_FAILED",
+        "NO_DATA_AVAILABLE",
+    }
+)
+
+
+def _summarize_blocking_message(code: str, message: str) -> str:
+    """Collapse noisy validation messages into short publication lines."""
+    text = (message or "").strip().rstrip(".")
+    if code == "RHETORICAL_LANGUAGE":
+        # Do not echo the banned word into published copy (softening would
+        # rewrite e.g. 'catastrophic' → 'severe' and look broken).
+        return "Prohibited rhetorical or non-neutral language detected in agent output"
+    if code == "UNAUTHORIZED_RECOMMENDATION":
+        return "Specialist report contained an unauthorized recommendation line"
+    if code == "UNSUPPORTED_STREAK_CLAIM" and text.lower().startswith(
+        "rejected downstream claim"
+    ):
+        return "Sequence or streak claims require complete calculation evidence"
+    if len(text) > 160:
+        return text[:157].rstrip() + "…"
+    return text
+
+
+def collect_publication_blocking_reasons(
+    validation_result: Any,
+    *,
+    limit: int = 8,
+) -> list[str]:
+    """Unique, short blocking reasons for executive summary / blocked sections.
+
+    Deduplicates identical diagnostics that the validator emits once per
+    location (e.g. five identical death-cross issues).
+    """
+    seen: set[str] = set()
+    reasons: list[str] = []
+    for issue in getattr(validation_result, "blocking_issues", []) or []:
+        code = str(getattr(issue, "code", "") or "")
+        message = str(getattr(issue, "message", "") or "")
+        summary = _summarize_blocking_message(code, message)
+        # Redact transaction terms only — never soften diagnostic text.
+        summary = redact_forbidden_transaction_language(summary)
+        key = re.sub(r"\s+", " ", summary).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        reasons.append(summary)
+        if len(reasons) >= limit:
+            break
+    return reasons
 
 _RESEARCH_REC_DISPLAY = {
     "NO_CURRENT_TRANSACTION": "No current transaction",
@@ -54,6 +120,14 @@ def determine_report_mode(
 
 def _status_allows_action(status: str) -> bool:
     return status in {"verified"}
+
+
+def _is_publication_blocked(status: str, report_mode: ReportMode) -> bool:
+    return report_mode == ReportMode.BLOCKED or status == "blocked"
+
+
+def _suppress_trade_action(status: str) -> bool:
+    return not _status_allows_action(status)
 
 
 def _display_recommendation(code: str) -> str:
@@ -96,9 +170,19 @@ def _extract_thesis(text: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            return sanitize_for_publication(match.group(1).strip())
-    paragraphs = [p.strip() for p in sanitize_for_publication(text).split("\n\n") if p.strip()]
-    return paragraphs[0] if paragraphs else ""
+            excerpt = clean_publication_excerpt(match.group(1).strip())
+            if excerpt and not is_section_header_only(excerpt):
+                return soften_rhetorical_language(excerpt)
+    for block in clean_publication_excerpt(text).split("\n\n"):
+        block = block.strip()
+        if (
+            block
+            and not is_section_header_only(block)
+            and not is_agent_process_paragraph(block)
+            and len(block.split()) >= 8
+        ):
+            return soften_rhetorical_language(block)
+    return ""
 
 
 def _extract_bullet_lines(text: str, *, limit: int = 5) -> list[str]:
@@ -114,23 +198,49 @@ def _extract_bullet_lines(text: str, *, limit: int = 5) -> list[str]:
     return bullets[:limit]
 
 
+def _extract_markdown_section(text: str, *headings: str) -> str:
+    for heading in headings:
+        pattern = rf"(?is)^#{{1,3}}\s*{re.escape(heading)}\s*$(.+?)(?=^#{{1,3}}\s|\Z)"
+        match = re.search(pattern, text, flags=re.MULTILINE)
+        if not match:
+            continue
+        body = strip_agent_process_phrases(match.group(1).strip())
+        if body:
+            return body
+    return ""
+
+
 def _first_substantial_paragraph(text: str) -> str:
+    section = _extract_markdown_section(text, "Executive Summary", "Summary", "1. Company Overview")
+    if section:
+        for block in section.split("\n\n"):
+            block = strip_agent_process_phrases(block.strip())
+            if block and not is_agent_process_paragraph(block) and len(block.split()) >= 8:
+                return block
+
     cleaned = sanitize_for_publication(text)
     for block in cleaned.split("\n\n"):
         block = block.strip()
+        if not block or block == "---":
+            continue
         if block.startswith("#"):
             continue
-        if block.startswith("**") and block.endswith("**"):
+        if block.startswith("**Analysis Date:"):
+            continue
+        if re.fullmatch(r"\*\*[^*]+\*\*", block):
+            continue
+        block = clean_publication_excerpt(block)
+        if is_section_header_only(block):
             continue
         if is_agent_process_paragraph(block):
             continue
         if len(block.split()) >= 8:
             return block
     for block in cleaned.split("\n\n"):
-        block = block.strip()
-        if block and not is_agent_process_paragraph(block):
+        block = clean_publication_excerpt(block.strip())
+        if block and not is_section_header_only(block) and not is_agent_process_paragraph(block):
             return block
-    return cleaned[:500].strip()
+    return clean_publication_excerpt(cleaned[:500].strip())
 
 
 def compose_section_summary(
@@ -179,14 +289,18 @@ def build_portfolio_synthesis(
     action_allowed = _status_allows_action(status) and recommendation == "TRADE_CANDIDATE"
     publication_safe = _status_allows_action(status)
 
-    blocking_issues = [
-        issue.message.rstrip(".")
-        for issue in getattr(validation_result, "blocking_issues", [])
-    ][:8]
+    blocking_issues = collect_publication_blocking_reasons(validation_result, limit=8)
 
     if publication_safe:
         supportive = _extract_bullet_lines(final_decision, limit=3)
         summary_source = _extract_thesis(final_decision) or _first_substantial_paragraph(final_decision)
+    elif status != "blocked":
+        supportive = _extract_bullet_lines(final_decision, limit=3)
+        summary_source = (
+            _extract_thesis(final_decision)
+            or _first_substantial_paragraph(market_summary)
+            or "Research context only; no transaction authority."
+        )
     else:
         supportive = []
         summary_source = (
@@ -195,9 +309,8 @@ def build_portfolio_synthesis(
         )
     if not supportive:
         supportive = _extract_bullet_lines(market_summary, limit=2)
-    caution = _extract_bullet_lines(news_sentiment_summary, limit=2)
-    if blocking_issues:
-        caution = (caution + blocking_issues)[:5]
+    # Keep caution points narrative-only; blocking reasons are listed separately.
+    caution = _extract_bullet_lines(news_sentiment_summary, limit=3)
 
     confidence = "low"
     if status == "verified":
@@ -206,7 +319,7 @@ def build_portfolio_synthesis(
         confidence = "medium"
 
     required = []
-    if not action_allowed:
+    if status == "blocked":
         required.append("Report validation passes without blocking issues.")
     signal = final_state.get("golden_trend_signal") or {}
     if isinstance(signal, dict) and not signal.get("tradeAllowed", True):
@@ -217,7 +330,12 @@ def build_portfolio_synthesis(
         recommendation=recommendation,  # type: ignore[arg-type]
         confidence=confidence,
         action_allowed=action_allowed,
-        summary=truncate_words(summary_source, 120),
+        summary=truncate_words(
+            clean_publication_excerpt(summary_source)
+            if not is_section_header_only(clean_publication_excerpt(summary_source))
+            else "Research context only; no transaction authority.",
+            120,
+        ),
         market_view=truncate_words(_first_substantial_paragraph(market_summary), 80),
         fundamentals_view=truncate_words(_first_substantial_paragraph(fundamentals_summary), 80),
         news_sentiment_view=truncate_words(_first_substantial_paragraph(news_sentiment_summary), 80),
@@ -271,16 +389,20 @@ def build_executive_summary(
             lines.append(f"- {point}")
         lines.append("")
 
-    if signal_text.strip():
-        lines.extend(["**Signal Service Result:**", signal_text.strip(), ""])
-
-    lines.extend(
-        [
-            "**Portfolio Manager View:**",
-            truncate_words(synthesis.summary, 120),
-            "",
-        ]
-    )
+    summary_view = clean_publication_excerpt(synthesis.summary)
+    thesis_view = clean_publication_excerpt(thesis or "")
+    if (
+        summary_view
+        and not is_section_header_only(summary_view)
+        and summary_view.lower() != thesis_view.lower()
+    ):
+        lines.extend(
+            [
+                "**Portfolio Manager View:**",
+                truncate_words(summary_view, 120),
+                "",
+            ]
+        )
 
     if synthesis.required_confirmations:
         lines.append("**What Would Change the Decision:**")
@@ -288,7 +410,9 @@ def build_executive_summary(
             lines.append(f"- {item}")
         lines.append("")
 
-    data_issues = list(blocking_reasons or []) + list(missing_evidence or [])
+    # Prefer explicit blocking reasons; fall back to missing-evidence only when
+    # no blocking list was provided (avoid duplicating the same lines twice).
+    data_issues = list(blocking_reasons or []) or list(missing_evidence or [])
     if data_issues:
         lines.append("**Data Quality / Blocking Issues:**")
         for issue in data_issues[:8]:
@@ -307,12 +431,78 @@ def build_executive_summary(
     return truncate_words("\n".join(lines), SECTION_LIMITS["executive_summary"]["max_words"])
 
 
+def _build_appendix(
+    final_state: dict,
+    *,
+    market_raw: str,
+    fundamentals_raw: str,
+    news_raw: str,
+) -> str | None:
+    parts: list[str] = []
+    for label, raw in (
+        ("Market Analyst", market_raw),
+        ("Fundamentals Analyst", fundamentals_raw),
+        ("News & Sentiment", news_raw),
+    ):
+        if raw.strip():
+            parts.append(f"### {label}\n{_publication_safe(raw)}")
+
+    debate = final_state.get("investment_debate_state") or {}
+    if isinstance(debate, dict):
+        research_raw = "\n\n".join(
+            str(debate.get(key) or "")
+            for key in ("bull_history", "bear_history", "judge_decision")
+        )
+        if research_raw.strip():
+            parts.append(f"### Research Debate\n{_publication_safe(research_raw)}")
+
+    risk_state = final_state.get("risk_debate_state") or {}
+    if isinstance(risk_state, dict):
+        risk_raw = "\n\n".join(
+            str(risk_state.get(key) or "")
+            for key in (
+                "aggressive_history",
+                "conservative_history",
+                "neutral_history",
+                "judge_decision",
+            )
+        )
+        if risk_raw.strip():
+            parts.append(f"### Risk Debate\n{_publication_safe(risk_raw)}")
+
+    for label, key in (
+        ("Trader Plan", "trader_investment_plan"),
+        ("Portfolio Decision", "final_trade_decision"),
+    ):
+        raw = str(final_state.get(key) or "")
+        if raw.strip():
+            parts.append(f"### {label}\n{_publication_safe(raw)}")
+
+    return "\n\n".join(parts) if parts else None
+
+
 def _collect_missing_evidence(validation_result: Any) -> list[str]:
-    return [
-        issue.message.rstrip(".")
-        for issue in getattr(validation_result, "issues", [])
-        if getattr(issue, "severity", "") == "blocking"
-    ][:10]
+    """Return distinct missing-evidence diagnostics (not all blocking issues)."""
+    seen: set[str] = set()
+    items: list[str] = []
+    for issue in getattr(validation_result, "issues", []) or []:
+        if getattr(issue, "severity", "") != "blocking":
+            continue
+        code = str(getattr(issue, "code", "") or "")
+        if code not in _MISSING_EVIDENCE_CODES:
+            continue
+        summary = _summarize_blocking_message(
+            code, str(getattr(issue, "message", "") or "")
+        )
+        summary = redact_forbidden_transaction_language(summary)
+        key = summary.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(summary)
+        if len(items) >= 8:
+            break
+    return items
 
 
 def _collect_sources(final_state: dict) -> list[dict[str, Any]]:
@@ -359,7 +549,8 @@ def build_final_report(
 ) -> FinalReport:
     status = getattr(validation_result, "status", "research_only")
     report_mode = determine_report_mode(status, user_requested_full_report=user_requested_full_report)
-    is_blocked = report_mode == ReportMode.BLOCKED or not _status_allows_action(status)
+    is_publication_blocked = _is_publication_blocked(status, report_mode)
+    suppress_trade_action = _suppress_trade_action(status)
 
     signal = final_state.get("golden_trend_signal")
     signal_text = ""
@@ -393,16 +584,14 @@ def build_final_report(
     news_summary = (
         compose_section_summary(news_raw, section_key="news_sentiment_summary") if news_raw else None
     )
-    risk_summary = compose_section_summary(risk_raw, section_key="risks") if risk_raw and not is_blocked else None
+    risk_summary = (
+        compose_section_summary(risk_raw, section_key="risks")
+        if risk_raw and not is_publication_blocked
+        else None
+    )
 
-    blocking_reasons = [
-        redact_forbidden_transaction_language(issue.message.rstrip("."))
-        for issue in getattr(validation_result, "blocking_issues", [])
-    ]
-    missing_evidence = [
-        redact_forbidden_transaction_language(item)
-        for item in _collect_missing_evidence(validation_result)
-    ]
+    blocking_reasons = collect_publication_blocking_reasons(validation_result, limit=8)
+    missing_evidence = _collect_missing_evidence(validation_result)
 
     synthesis = build_portfolio_synthesis(
         final_state,
@@ -413,36 +602,42 @@ def build_final_report(
         signal_text=signal_text,
     )
 
-    if is_blocked:
+    if suppress_trade_action:
         synthesis = synthesis.model_copy(
             update={
                 "recommendation": "INSUFFICIENT_EVIDENCE",
                 "action_allowed": False,
-                "summary": redact_forbidden_transaction_language(
+                "summary": _publication_safe(
                     synthesis.summary
-                    or "The report is blocked because validation did not pass publication thresholds."
+                    if not is_publication_blocked
+                    else (
+                        synthesis.summary
+                        or "The report is blocked because validation did not pass publication thresholds."
+                    )
                 ),
                 "key_supportive_points": [
-                    redact_forbidden_transaction_language(point)
-                    for point in synthesis.key_supportive_points
+                    _publication_safe(point) for point in synthesis.key_supportive_points
                 ],
                 "key_caution_points": [
-                    redact_forbidden_transaction_language(point)
-                    for point in synthesis.key_caution_points
+                    _publication_safe(point) for point in synthesis.key_caution_points
                 ],
             }
         )
 
     final_decision = str(final_state.get("final_trade_decision", ""))
-    if is_blocked:
-        thesis = redact_forbidden_transaction_language(
-            _first_substantial_paragraph(
-                "\n\n".join(filter(None, [market_raw[:400], fundamentals_raw[:200]]))
+    if suppress_trade_action:
+        thesis = _publication_safe(
+            _extract_thesis(final_decision)
+            or _first_substantial_paragraph(
+                "\n\n".join(filter(None, [market_raw, fundamentals_raw]))
             )
         )
     else:
-        thesis = _extract_thesis(final_decision) or _first_substantial_paragraph(
-            "\n\n".join(filter(None, [market_raw[:400], fundamentals_raw[:200]]))
+        thesis = soften_rhetorical_language(
+            _extract_thesis(final_decision)
+            or _first_substantial_paragraph(
+                "\n\n".join(filter(None, [market_raw, fundamentals_raw]))
+            )
         )
 
     executive_summary = build_executive_summary(
@@ -450,23 +645,20 @@ def build_final_report(
         publication_status=status,
         synthesis=synthesis,
         thesis=thesis,
-        signal_text=signal_text if not is_blocked else signal_text,
+        signal_text=signal_text,
         blocking_reasons=blocking_reasons,
         missing_evidence=missing_evidence,
     )
     appendix = None
     if report_mode == ReportMode.FULL and user_requested_full_report:
-        appendix_parts = []
-        for label, raw in (
-            ("Market Analyst", market_raw),
-            ("Fundamentals Analyst", fundamentals_raw),
-            ("News & Sentiment", news_raw),
-        ):
-            if raw:
-                appendix_parts.append(f"### {label}\n{sanitize_for_publication(raw)}")
-        appendix = "\n\n".join(appendix_parts) if appendix_parts else None
+        appendix = _build_appendix(
+            final_state,
+            market_raw=market_raw,
+            fundamentals_raw=fundamentals_raw,
+            news_raw=news_raw,
+        )
 
-    if is_blocked:
+    if is_publication_blocked:
         market_summary = _historical_snapshot(final_state) or market_summary
         fundamentals_summary = (
             compose_section_summary(
@@ -479,20 +671,30 @@ def build_final_report(
         )
         news_summary = None
         risk_summary = None
-        signal_text = signal_text or None
-        executive_summary = redact_forbidden_transaction_language(executive_summary)
+        executive_summary = _publication_safe(executive_summary)
+        market_summary = _publication_safe(market_summary) if market_summary else None
+        fundamentals_summary = (
+            _publication_safe(fundamentals_summary) if fundamentals_summary else None
+        )
+    else:
+        executive_summary = soften_rhetorical_language(executive_summary)
         market_summary = (
-            redact_forbidden_transaction_language(market_summary) if market_summary else None
+            soften_rhetorical_language(market_summary) if market_summary else None
         )
         fundamentals_summary = (
-            redact_forbidden_transaction_language(fundamentals_summary)
+            soften_rhetorical_language(fundamentals_summary)
             if fundamentals_summary
             else None
         )
+        news_summary = soften_rhetorical_language(news_summary) if news_summary else None
+        risk_summary = soften_rhetorical_language(risk_summary) if risk_summary else None
+        if signal_text:
+            signal_text = soften_rhetorical_language(signal_text)
 
     return FinalReport(
         symbol=ticker,
-        company_name=final_state.get("company_of_interest"),
+        company_name=final_state.get("report_display_label")
+        or final_state.get("company_of_interest"),
         report_mode=report_mode,
         publication_status=status,
         executive_summary=executive_summary,

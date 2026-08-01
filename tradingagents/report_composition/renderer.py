@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from tradingagents.report_composition.models import FinalReport, ReportMode
+from tradingagents.report_composition.sanitizer import (
+    clean_publication_excerpt,
+    is_section_header_only,
+)
 
 
 def _display_recommendation(code: str) -> str:
@@ -27,9 +32,12 @@ def render_portfolio_synthesis_section(final_report: FinalReport) -> str:
         f"**Action:** {_display_recommendation('NO_CURRENT_TRANSACTION') if not s.action_allowed else _display_recommendation(s.recommendation)}",
         f"**Confidence:** {s.confidence.title()}",
         "",
-        "**Synthesis:**",
-        s.summary,
-        "",
+    "**Synthesis:**",
+    clean_publication_excerpt(s.summary)
+    if clean_publication_excerpt(s.summary)
+    and not is_section_header_only(clean_publication_excerpt(s.summary))
+    else "Research context only; no transaction authority.",
+    "",
     ]
     if s.key_supportive_points:
         lines.append("**Supportive points:**")
@@ -60,7 +68,11 @@ def render_final_report_markdown(final_report: FinalReport) -> str:
     sections: list[str] = [final_report.executive_summary]
 
     if final_report.report_mode == ReportMode.BLOCKED:
-        if final_report.blocking_reasons:
+        # Blocking reasons already appear in the Executive Summary; keep a
+        # dedicated section only when the summary omitted them (empty thesis path).
+        if final_report.blocking_reasons and "**Data Quality / Blocking Issues:**" not in (
+            final_report.executive_summary or ""
+        ):
             lines = ["## Blocking Reasons", ""]
             for reason in final_report.blocking_reasons:
                 lines.append(f"- {reason}")
@@ -72,9 +84,19 @@ def render_final_report_markdown(final_report: FinalReport) -> str:
         if final_report.fundamentals_summary:
             sections.append(f"## Fundamental Snapshot\n\n{final_report.fundamentals_summary}")
 
-        if final_report.missing_evidence:
+        # Skip Missing Evidence when it would only repeat blocking reasons.
+        blocking_set = {
+            re.sub(r"\s+", " ", r).strip().lower()
+            for r in (final_report.blocking_reasons or [])
+        }
+        missing = [
+            item
+            for item in (final_report.missing_evidence or [])
+            if re.sub(r"\s+", " ", item).strip().lower() not in blocking_set
+        ]
+        if missing:
             lines = ["## Missing Evidence", ""]
-            for item in final_report.missing_evidence:
+            for item in missing:
                 lines.append(f"- {item}")
             sections.append("\n".join(lines))
 

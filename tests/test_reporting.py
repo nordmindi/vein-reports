@@ -13,7 +13,7 @@ def _state():
     return {
         "company_of_interest": "AAPL",
         "trade_date": "2026-01-15",
-        "market_report": "MKT",
+        "market_report": "Market observations show improving momentum with volume confirmation near recent lows.",
         "news_report": "NEWS",
         "investment_plan": "Research synthesis without an explicit rating.",
         "investment_debate_state": {"judge_decision": "RM PLAN"},
@@ -62,7 +62,7 @@ def _state():
 def test_write_report_tree_creates_files(tmp_path):
     out = write_report_tree(_state(), "AAPL", tmp_path)
     assert out.name == "complete_report.md"
-    assert (tmp_path / "1_analysts" / "market.md").read_text() == "MKT"
+    assert (tmp_path / "1_analysts" / "market.md").read_text().startswith("Market observations")
     assert (tmp_path / "1_analysts" / "news.md").read_text() == "NEWS"
     assert (tmp_path / "2_research" / "manager.md").read_text() == "RM PLAN"
     assert (tmp_path / "3_trading" / "trader.md").read_text() == "TRADE"
@@ -70,9 +70,14 @@ def test_write_report_tree_creates_files(tmp_path):
     assert "Insufficient Evidence" in decision
     assert (tmp_path / "validation_report.json").exists()
     assert (tmp_path / "dashboard.json").exists()
+    assert (tmp_path / "final_report.json").exists()
     complete = out.read_text()
     assert "Trading Analysis Report: AAPL" in complete
-    assert "MKT" in complete and "Insufficient Evidence" in complete
+    assert "## Executive Summary" in complete
+    assert "Executive Dashboard" not in complete
+    assert "Insufficient evidence" in complete or "Insufficient Evidence" in complete
+    assert "improving momentum" in complete
+    assert "<tool_call>" not in complete
 
 
 @pytest.mark.unit

@@ -6,7 +6,10 @@ import pytest
 
 from tradingagents.integrations.intelligence_target import (
     IntelligenceTarget,
+    build_thematic_instrument_context,
     is_equity_like_target,
+    resolve_asset_type,
+    resolve_display_label,
     resolve_report_subject,
 )
 
@@ -28,3 +31,23 @@ class TestIntelligenceTarget:
 
     def test_is_equity_like_true_for_crypto(self):
         assert is_equity_like_target(IntelligenceTarget(type="crypto", value="BTC")) is True
+
+    def test_resolve_asset_type_for_sector(self):
+        assert resolve_asset_type(IntelligenceTarget(type="sector", value="mining")) == "thematic"
+
+    def test_build_thematic_instrument_context(self):
+        text = build_thematic_instrument_context(
+            subject="MINING",
+            target=IntelligenceTarget(type="sector", value="mining"),
+            primary_symbol="XME",
+        )
+        assert "mining" in text.lower()
+        assert "XME" in text
+
+    def test_resolve_display_label_from_target(self):
+        label = resolve_display_label(
+            subject="MINING",
+            target=IntelligenceTarget(type="sector", value="mining"),
+        )
+        assert "Mining" in label
+        assert "sector" in label

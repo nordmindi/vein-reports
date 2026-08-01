@@ -1,13 +1,10 @@
 """Shared rating vocabulary and a deterministic heuristic parser.
 
 - The same directional scale (Buy, Overweight, Hold, Underweight, Sell) is used by:
-- The Portfolio Manager (final position decision)
-- The signal processor (rating extracted for downstream consumers)
-- The memory log (rating tag stored alongside each decision entry)
-- Insufficient Evidence is the safe non-transaction outcome when validation
-  fails or evidence is incomplete.
-
-Centralising it here avoids drift between those call sites.
+- The Research Manager and Trader (directional context)
+- The signal processor (legacy rating extraction)
+- The Portfolio Manager now publishes research recommendations instead of buy/sell ratings.
+- Insufficient Evidence is the safe non-transaction outcome when validation fails.
 """
 
 from __future__ import annotations
@@ -21,24 +18,46 @@ RATINGS_5_TIER: tuple[str, ...] = (
 SAFE_RATING = "Insufficient Evidence"
 RATINGS: tuple[str, ...] = RATINGS_5_TIER + (SAFE_RATING,)
 
+RESEARCH_RECOMMENDATIONS: tuple[str, ...] = (
+    "No current transaction",
+    "Watchlist",
+    "Trade candidate",
+    "Research only",
+    "Insufficient evidence",
+)
+
 _RATING_CANONICAL = {r.lower(): r for r in RATINGS}
 _RATING_CANONICAL["insufficient_evidence"] = SAFE_RATING
 _RATING_CANONICAL["insufficient-evidence"] = SAFE_RATING
 
-# Matches "Rating: X" / "rating - X" / "Rating: **X**" — tolerates markdown
-# bold wrappers and either a colon or hyphen separator.
-_RATING_LABEL_RE = re.compile(r"rating.*?[:\-][\s*]*([A-Za-z_\-\s]+)", re.IGNORECASE)
+_RESEARCH_CANONICAL = {r.lower(): r for r in RESEARCH_RECOMMENDATIONS}
+
+# Matches "Rating: X" / "Recommendation: X" — tolerates markdown bold wrappers.
+_RATING_LABEL_RE = re.compile(
+    r"(?:rating|recommendation).*?[:\-][\s*]*([A-Za-z_\-\s]+)",
+    re.IGNORECASE,
+)
+
+
+def parse_research_recommendation(text: str, default: str = "Insufficient evidence") -> str:
+    for line in text.splitlines():
+        m = _RATING_LABEL_RE.search(line)
+        if m and "recommendation" in line.lower():
+            rec = _canonical_research(m.group(1))
+            if rec is not None:
+                return rec
+    for rec in RESEARCH_RECOMMENDATIONS:
+        if re.search(rf"\b{re.escape(rec)}\b", text, flags=re.IGNORECASE):
+            return rec
+    return default
 
 
 def parse_rating(text: str, default: str = "Hold") -> str:
-    """Heuristically extract a canonical rating from prose text.
+    """Heuristically extract a canonical rating from prose text."""
+    research = parse_research_recommendation(text, default="")
+    if research:
+        return _research_to_legacy_rating(research)
 
-    Two-pass strategy:
-    1. Look for an explicit "Rating: X" label (tolerant of markdown bold).
-    2. Fall back to the first 5-tier rating word found anywhere in the text.
-
-    Returns a Title-cased rating string, or ``default`` if no rating word appears.
-    """
     for line in text.splitlines():
         m = _RATING_LABEL_RE.search(line)
         if m:
@@ -57,6 +76,26 @@ def parse_rating(text: str, default: str = "Hold") -> str:
                 return rating
 
     return default
+
+
+def _research_to_legacy_rating(research: str) -> str:
+    mapping = {
+        "Trade candidate": "Buy",
+        "Watchlist": "Hold",
+        "No current transaction": "Hold",
+        "Research only": "Hold",
+        "Insufficient evidence": SAFE_RATING,
+    }
+    return mapping.get(research, "Hold")
+
+
+def _canonical_research(value: str) -> str | None:
+    clean = value.strip("*:., \t\r\n")
+    clean = re.sub(r"\s+", " ", clean)
+    for rec in RESEARCH_RECOMMENDATIONS:
+        if clean.lower().startswith(rec.lower()):
+            return rec
+    return _RESEARCH_CANONICAL.get(clean.lower())
 
 
 def _canonical_rating(value: str) -> str | None:

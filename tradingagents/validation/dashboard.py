@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from tradingagents.agents.utils.rating import parse_rating
+from tradingagents.agents.utils.rating import parse_rating, parse_research_recommendation
 
 SAFE_RECOMMENDATION = "INSUFFICIENT_EVIDENCE"
 SAFE_ACTION = "NO_CURRENT_TRANSACTION"
@@ -161,6 +161,9 @@ def _action_for_status_and_rating(status: str, rating: str) -> str:
 def _recommendation_for_status(status: str, final_decision: str) -> str:
     if not _status_allows_action(status):
         return SAFE_RECOMMENDATION
+    research = parse_research_recommendation(final_decision, default="")
+    if research and research != "Insufficient evidence":
+        return research.upper().replace(" ", "_")
     return parse_rating(final_decision, default="NOT_AVAILABLE")
 
 
