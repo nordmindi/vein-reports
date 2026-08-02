@@ -1,108 +1,116 @@
-# TradingAgents Service Deployment on Railway.com
+# Vein Reports Service Deployment on Railway
 
-This guide explains how to deploy the TradingAgents service on Railway.com.
+Deploy Vein Reports alongside Vein Aggregator, Vein Signals, and Vein Explorer.
 
 ## Prerequisites
 
-1. A Railway.com account
-2. A GitHub account (to fork this repository)
-3. API keys for the LLM providers you want to use
+1. A Railway account
+2. GitHub access to `nordmindi/vein-reports`
+3. LLM provider API keys (OpenAI, Ollama Cloud, Google, etc.)
+4. Sibling service URLs/keys when Trinity integrations are enabled
 
-## Deployment Steps
+## Deploy
 
-### 1. Fork the Repository
+1. Open https://railway.app/ → **New Project** → **Deploy from GitHub**
+2. Select `nordmindi/vein-reports`
+3. Railway uses [`railway.json`](railway.json) / [`Dockerfile.service`](Dockerfile.service)
+4. Generate a public domain under **Settings → Networking**
 
-First, fork this repository to your GitHub account:
-1. Go to https://github.com/nordmindi/vein-reports
-2. Click the "Fork" button
-3. Follow the prompts to create your fork
+## Required variables
 
-### 2. Deploy to Railway
+| Variable | Description |
+|----------|-------------|
+| `TRADINGAGENTS_SERVICE_API_KEY` | Inbound API key (`X-API-Key`) |
+| LLM keys for your provider | e.g. `OPENAI_API_KEY`, `OLLAMA_API_KEY`, `GOOGLE_API_KEY` |
 
-1. Go to https://railway.app/
-2. Sign in to your account
-3. Click "New Project"
-4. Select "Deploy from GitHub"
-5. Choose your forked repository
-6. Railway will automatically detect the project and use the `Dockerfile.service` file
+## Recommended LLM defaults
 
-### 3. Configure Environment Variables
+Avoid retired MiniMax **M2.5** models (fail with HTTP 410):
 
-After deployment, configure the following environment variables in Railway:
+```env
+TRADINGAGENTS_LLM_PROVIDER=ollama
+TRADINGAGENTS_DEEP_THINK_LLM=minimax-m2.7
+TRADINGAGENTS_QUICK_THINK_LLM=minimax-m2.7
+```
 
-1. Go to your Railway project
-2. Click on the "Settings" tab
-3. Click on "Variables"
-4. Add the following variables:
+## Trinity integrations (production)
 
-| Variable | Description | Example Value |
-|----------|-------------|---------------|
-| `TRADINGAGENTS_SERVICE_API_KEY` | API key for service authentication | `your-secret-api-key` |
-| `OPENAI_API_KEY` | OpenAI API key (if using OpenAI models) | `sk-...` |
-| `GOOGLE_API_KEY` | Google API key (if using Google models) | `AIza...` |
-| `HOST` | Host to bind the service to | `0.0.0.0` |
-| `PORT` | Port to listen on | `8000` |
+```env
+# Vein Aggregator
+TRADINGAGENTS_VEIN_AGGREGATOR_ENABLED=1
+TRADINGAGENTS_VEIN_AGGREGATOR_BASE_URL=https://vein-aggregator-production.up.railway.app
+TRADINGAGENTS_VEIN_AGGREGATOR_API_KEY=<same-as-VEIN_AGGREGATOR_API_KEY>
+TRADINGAGENTS_VEIN_AGGREGATOR_TIMEOUT_SEC=240
+TRADINGAGENTS_VEIN_AGGREGATOR_MAX_ATTEMPTS=2
 
-### 4. Redeploy
+# Vein Signals
+TRADINGAGENTS_GOLDEN_TREND_ENABLED=1
+TRADINGAGENTS_GOLDEN_TREND_BASE_URL=https://veinsignals-production.up.railway.app
+TRADINGAGENTS_GOLDEN_TREND_API_KEY=<vein-signals-key>
 
-After setting the environment variables, Railway will automatically redeploy the application.
+# Vein Explorer
+TRADINGAGENTS_VEIN_EXPLORER_ENABLED=1
+TRADINGAGENTS_VEIN_EXPLORER_BASE_URL=https://vein-api-production.up.railway.app
+TRADINGAGENTS_VEIN_SERVICE_API_KEY=<vein-service-key>
+```
+
+## Job durability (important)
+
+Jobs are persisted under `TRADINGAGENTS_SERVICE_REPORTS_DIR` (default `reports/api`).
+
+On Railway:
+
+1. Attach a **volume** mounted at `/app/reports` (or your chosen path)
+2. Set:
+
+```env
+TRADINGAGENTS_SERVICE_REPORTS_DIR=/app/reports/api
+```
+
+On restart:
+
+- **completed / failed** jobs remain pollable
+- **queued** jobs are re-submitted
+- **running** jobs are marked failed (interrupted) unless:
+
+```env
+TRADINGAGENTS_JOB_RESUME_INTERRUPTED=1
+```
+
+Without a volume, redeploys wipe in-progress and completed artifacts.
+
+## Other useful variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `HOST` / `PORT` | `0.0.0.0` / Railway `PORT` | Bind address |
+| `TRADINGAGENTS_SERVICE_WORKERS` | `1` | Concurrent report jobs |
+| `TRADINGAGENTS_MAX_DEBATE_ROUNDS` | config default | Debate depth |
+| `TRADINGAGENTS_MAX_RISK_DISCUSS_ROUNDS` | config default | Risk debate depth |
+
+## Verify
+
+```bash
+curl https://<your-service>.up.railway.app/health
+
+curl -X POST "https://<your-service>.up.railway.app/v1/reports" \
+  -H "X-API-Key: $TRADINGAGENTS_SERVICE_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"NVDA","analysis_date":"2026-07-31","selected_analysts":["news","social"]}'
+```
 
 ## Troubleshooting
 
-### Common Issues
+| Issue | Fix |
+|-------|-----|
+| `minimax-m2.5 was retired` | Set deep/quick think LLMs to `minimax-m2.7` or newer |
+| Job 404 after deploy | Mount a volume for `TRADINGAGENTS_SERVICE_REPORTS_DIR` |
+| Aggregator unused / empty news | Raise `TRADINGAGENTS_VEIN_AGGREGATOR_TIMEOUT_SEC` (cold fetches ~200s) |
+| Research Manager structured-output warning | Expected with thinking models; free-text fallback continues |
+| 401 on `/v1/reports` | Match `X-API-Key` to `TRADINGAGENTS_SERVICE_API_KEY` |
 
-1. **Application crashes on startup**
-   - Ensure `TRADINGAGENTS_SERVICE_API_KEY` is set
-   - Check that the correct Dockerfile is being used (`Dockerfile.service`)
+## Security
 
-2. **Health checks failing**
-   - Check the logs for error messages
-   - Ensure the service is binding to `0.0.0.0` and not `127.0.0.1`
-
-3. **LLM API errors**
-   - Verify your API keys are correct
-   - Check that you have credits/balance on your LLM provider accounts
-
-### Viewing Logs
-
-To view logs in Railway:
-1. Go to your Railway project
-2. Click on the "Deployments" tab
-3. Select the latest deployment
-4. Click on "View Logs"
-
-## API Usage
-
-Once deployed, you can access the API at your Railway URL:
-
-```
-# Health check
-GET https://your-railway-url.railway.app/health
-
-# Create report job
-POST https://your-railway-url.railway.app/v1/reports
-Headers:
-  X-API-Key: your-api-key
-  Content-Type: application/json
-Body:
-  {
-    "ticker": "NVDA",
-    "analysis_date": "2026-05-07",
-    "selected_analysts": ["market", "news", "fundamentals"]
-  }
-```
-
-## Scaling
-
-Railway automatically scales your application based on traffic. For high-traffic applications, you may want to:
-
-1. Increase the number of workers by setting `TRADINGAGENTS_SERVICE_WORKERS` environment variable
-2. Monitor memory usage and adjust instance size if needed
-3. Consider rate limits of your LLM providers
-
-## Security Considerations
-
-1. Always use a strong API key for `TRADINGAGENTS_SERVICE_API_KEY`
-2. Store API keys securely in Railway's environment variables
-3. Use HTTPS (Railway provides this automatically)
-4. Regularly rotate your API keys
+1. Use a strong `TRADINGAGENTS_SERVICE_API_KEY`
+2. Keep sibling service keys in Railway Variables only
+3. Railway provides HTTPS on generated domains

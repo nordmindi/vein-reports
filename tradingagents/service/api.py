@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
 from enum import Enum
@@ -392,15 +393,93 @@ class JobRecord:
         self.completed_at: datetime | None = None
 
 
+executor = ThreadPoolExecutor(max_workers=int(os.getenv("TRADINGAGENTS_SERVICE_WORKERS", "1")))
+jobs: dict[str, JobRecord] = {}
+
+
+def _resume_interrupted_jobs_enabled() -> bool:
+    raw = os.getenv("TRADINGAGENTS_JOB_RESUME_INTERRUPTED", "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _iter_persisted_job_ids() -> list[str]:
+    store = _job_store_dir()
+    if not store.exists():
+        return []
+    return sorted(path.stem for path in store.glob("*.json") if path.is_file())
+
+
+def recover_jobs_from_disk() -> dict[str, int]:
+    """Reload persisted jobs after a process restart.
+
+    - completed / failed: restore into memory for polling/downloads
+    - queued: re-submit to the worker pool
+    - running: mark failed (interrupted) unless TRADINGAGENTS_JOB_RESUME_INTERRUPTED=1
+    """
+    stats = {
+        "loaded": 0,
+        "requeued": 0,
+        "interrupted_failed": 0,
+        "interrupted_resumed": 0,
+        "skipped": 0,
+    }
+    resume_interrupted = _resume_interrupted_jobs_enabled()
+
+    for job_id in _iter_persisted_job_ids():
+        if job_id in jobs:
+            stats["skipped"] += 1
+            continue
+        record = _load_job_record(job_id)
+        if record is None:
+            stats["skipped"] += 1
+            continue
+
+        jobs[job_id] = record
+        stats["loaded"] += 1
+
+        if record.status == JobStatus.queued:
+            record.future = executor.submit(_run_job_in_context, record)
+            stats["requeued"] += 1
+            log_info("report_job_requeued_after_restart", jobId=job_id)
+        elif record.status == JobStatus.running:
+            if resume_interrupted:
+                record.status = JobStatus.queued
+                record.started_at = None
+                record.error = None
+                _write_job_record(record)
+                record.future = executor.submit(_run_job_in_context, record)
+                stats["interrupted_resumed"] += 1
+                log_info("report_job_resumed_after_restart", jobId=job_id)
+            else:
+                record.status = JobStatus.failed
+                record.error = (
+                    "Job interrupted by service restart. "
+                    "Re-submit the report request, or set "
+                    "TRADINGAGENTS_JOB_RESUME_INTERRUPTED=1 to auto-retry."
+                )
+                record.completed_at = datetime.now()
+                _write_job_record(record)
+                stats["interrupted_failed"] += 1
+                log_warning("report_job_interrupted_by_restart", jobId=job_id)
+
+    if stats["loaded"]:
+        log_info("job_store_recovered", **stats)
+    return stats
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    recover_jobs_from_disk()
+    yield
+
+
 app = FastAPI(
     title="Vein Reports Service API",
     version="0.1.0",
     description="Run Vein Reports analysis jobs and download generated PDF reports.",
+    lifespan=_lifespan,
 )
 app.add_middleware(TraceMiddleware)
-
-executor = ThreadPoolExecutor(max_workers=int(os.getenv("TRADINGAGENTS_SERVICE_WORKERS", "1")))
-jobs: dict[str, JobRecord] = {}
 
 
 def _error_body(
@@ -680,6 +759,8 @@ def _get_job(job_id: str) -> JobRecord:
     record = jobs.get(job_id)
     if record is None:
         record = _load_job_record(job_id)
+        if record is not None:
+            jobs[job_id] = record
     if record is None:
         log_warning("job_not_found", jobId=job_id)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")

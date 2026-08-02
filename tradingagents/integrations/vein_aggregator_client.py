@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Any
 
 import requests
 
 from tradingagents.integrations.intelligence_target import IntelligenceTarget
-from tradingagents.service.trace_logging import log_warning, trace_headers
+from tradingagents.service.trace_logging import log_info, log_warning, trace_headers
 
 INTELLIGENCE_VERSION = "vein-intelligence-v1"
+
+# Cold Railway aggregator fetches can take ~200s; default above that budget.
+_DEFAULT_TIMEOUT_SEC = 240.0
+_DEFAULT_MAX_ATTEMPTS = 2
+_DEFAULT_RETRY_BACKOFF_SEC = 2.0
 
 
 def is_vein_aggregator_enabled() -> bool:
@@ -32,6 +38,40 @@ def _headers() -> dict[str, str]:
         headers["X-API-Key"] = key
         headers["Authorization"] = f"Bearer {key}"
     return headers
+
+
+def _float_env(name: str, default: float) -> float:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _timeout_seconds(override: float | None = None) -> float:
+    if override is not None:
+        return override
+    return max(1.0, _float_env("TRADINGAGENTS_VEIN_AGGREGATOR_TIMEOUT_SEC", _DEFAULT_TIMEOUT_SEC))
+
+
+def _max_attempts() -> int:
+    return max(1, _int_env("TRADINGAGENTS_VEIN_AGGREGATOR_MAX_ATTEMPTS", _DEFAULT_MAX_ATTEMPTS))
+
+
+def _retry_backoff_sec() -> float:
+    return max(0.0, _float_env("TRADINGAGENTS_VEIN_AGGREGATOR_RETRY_BACKOFF_SEC", _DEFAULT_RETRY_BACKOFF_SEC))
 
 
 def _peer_symbols_from_context(context_bundle: dict[str, Any] | None) -> list[str]:
@@ -90,6 +130,63 @@ def _build_payload(
     return payload
 
 
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, (requests.Timeout, requests.ConnectionError)):
+        return True
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return exc.response.status_code in {408, 425, 429, 500, 502, 503, 504}
+    return False
+
+
+def _post_with_retry(
+    url: str,
+    *,
+    payload: dict[str, Any],
+    timeout_seconds: float,
+    subject: str,
+) -> requests.Response:
+    attempts = _max_attempts()
+    backoff = _retry_backoff_sec()
+    last_error: Exception | None = None
+
+    for attempt in range(1, attempts + 1):
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=_headers(),
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            if attempt > 1:
+                log_info(
+                    "vein_aggregator_fetch_recovered",
+                    subject=subject,
+                    attempt=attempt,
+                )
+            return response
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+            retryable = _is_retryable(exc)
+            if not retryable or attempt >= attempts:
+                raise
+            delay = backoff * attempt
+            log_warning(
+                "vein_aggregator_fetch_retry",
+                subject=subject,
+                attempt=attempt,
+                maxAttempts=attempts,
+                retryInSec=delay,
+                error=str(exc),
+                errorType=exc.__class__.__name__,
+            )
+            if delay > 0:
+                time.sleep(delay)
+
+    assert last_error is not None
+    raise last_error
+
+
 def fetch_intelligence_bundle(
     symbol: str | None = None,
     *,
@@ -97,7 +194,7 @@ def fetch_intelligence_bundle(
     end_date: str,
     context_bundle: dict[str, Any] | None = None,
     lookback_days: int = 7,
-    timeout_seconds: float = 90.0,
+    timeout_seconds: float | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Pull vein-intelligence-v1 bundle and briefs from Vein Aggregator."""
     if not is_vein_aggregator_enabled():
@@ -120,14 +217,14 @@ def fetch_intelligence_bundle(
         log_warning("vein_aggregator_invalid_request", subject=subject, error=str(exc))
         return None, None
 
+    timeout = _timeout_seconds(timeout_seconds)
     try:
-        response = requests.post(
+        response = _post_with_retry(
             f"{base}/v1/feeds/intelligence/briefs",
-            json=payload,
-            headers=_headers(),
-            timeout=timeout_seconds,
+            payload=payload,
+            timeout_seconds=timeout,
+            subject=subject,
         )
-        response.raise_for_status()
         body = response.json()
     except (requests.RequestException, ValueError) as exc:
         log_warning(
@@ -135,6 +232,8 @@ def fetch_intelligence_bundle(
             subject=subject,
             error=str(exc),
             errorType=exc.__class__.__name__,
+            timeoutSec=timeout,
+            maxAttempts=_max_attempts(),
         )
         return None, None
 

@@ -100,11 +100,13 @@ _BY_ID: dict[str, ModelCapabilities] = {
     # platform.minimax.io/docs/api-reference/text-openai-api
     "MiniMax-M2.7": _MINIMAX_THINKING,
     "MiniMax-M2.7-highspeed": _MINIMAX_THINKING,
+    # Retired MiniMax M2.5 ids kept for capability lookups if still configured.
     "MiniMax-M2.5": _MINIMAX_THINKING,
     "MiniMax-M2.5-highspeed": _MINIMAX_THINKING,
     "MiniMax-M2.1": _MINIMAX_THINKING,
     "MiniMax-M2.1-highspeed": _MINIMAX_THINKING,
     "MiniMax-M2": _MINIMAX_THINKING,
+    "minimax-m2.7": _MINIMAX_THINKING,
 }
 
 # Forward-compat patterns. New ``deepseek-v5-*`` / ``deepseek-reasoner-*``

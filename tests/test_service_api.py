@@ -24,6 +24,75 @@ class TestPersistedJobStore:
         assert loaded.job_id == "job-running"
         assert loaded.status == api.JobStatus.running
         assert loaded.request.ticker == "TSLA"
+        assert "job-running" in api.jobs
+
+    def test_recover_marks_interrupted_running_jobs_failed(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
+        monkeypatch.delenv("TRADINGAGENTS_JOB_RESUME_INTERRUPTED", raising=False)
+        api.jobs.clear()
+        record = api.JobRecord(
+            "job-interrupted",
+            ReportRequest(ticker="NVDA", analysis_date="2026-07-31"),
+        )
+        record.status = api.JobStatus.running
+        api._write_job_record(record)
+        api.jobs.clear()
+
+        stats = api.recover_jobs_from_disk()
+
+        assert stats["interrupted_failed"] == 1
+        loaded = api.jobs["job-interrupted"]
+        assert loaded.status == api.JobStatus.failed
+        assert "interrupted by service restart" in (loaded.error or "").lower()
+
+    def test_recover_requeues_queued_jobs(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
+        api.jobs.clear()
+        record = api.JobRecord(
+            "job-queued",
+            ReportRequest(ticker="AAPL", analysis_date="2026-07-31"),
+        )
+        record.status = api.JobStatus.queued
+        api._write_job_record(record)
+        api.jobs.clear()
+
+        submitted = []
+        monkeypatch.setattr(
+            api.executor,
+            "submit",
+            lambda fn, rec: submitted.append(rec.job_id) or None,
+        )
+
+        stats = api.recover_jobs_from_disk()
+
+        assert stats["requeued"] == 1
+        assert submitted == ["job-queued"]
+        assert api.jobs["job-queued"].status == api.JobStatus.queued
+
+    def test_recover_can_resume_interrupted_jobs(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
+        monkeypatch.setenv("TRADINGAGENTS_JOB_RESUME_INTERRUPTED", "1")
+        api.jobs.clear()
+        record = api.JobRecord(
+            "job-resume",
+            ReportRequest(ticker="MSFT", analysis_date="2026-07-31"),
+        )
+        record.status = api.JobStatus.running
+        api._write_job_record(record)
+        api.jobs.clear()
+
+        submitted = []
+        monkeypatch.setattr(
+            api.executor,
+            "submit",
+            lambda fn, rec: submitted.append(rec.job_id) or None,
+        )
+
+        stats = api.recover_jobs_from_disk()
+
+        assert stats["interrupted_resumed"] == 1
+        assert submitted == ["job-resume"]
+        assert api.jobs["job-resume"].status == api.JobStatus.queued
 
     def test_get_job_persists_strategy_id(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
@@ -118,7 +187,8 @@ class TestServiceApiContract:
                 analysis_date="2026-07-31",
             )
 
-    def test_create_report_endpoint_accepts_target(self, monkeypatch):
+    def test_create_report_endpoint_accepts_target(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
         monkeypatch.setenv("TRADINGAGENTS_SERVICE_API_KEY", "test-key")
         monkeypatch.setattr(api.executor, "submit", lambda fn, record: None)
         api.jobs.clear()
@@ -140,7 +210,8 @@ class TestServiceApiContract:
         assert record.request.intelligence_target.type == "sector"
         assert record.request.intelligence_target.value == "mining"
 
-    def test_report_validation_lite_endpoint(self, monkeypatch):
+    def test_report_validation_lite_endpoint(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
         monkeypatch.setenv("TRADINGAGENTS_SERVICE_API_KEY", "test-key")
         client = TestClient(api.app)
         response = client.post(

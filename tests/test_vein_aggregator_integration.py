@@ -208,6 +208,43 @@ class TestVeinAggregatorClient:
         assert "symbol" not in payload
         assert payload["target"] == {"type": "sector", "value": "mining"}
 
+    def test_fetch_retries_on_timeout_then_succeeds(self, monkeypatch, bundle):
+        import requests
+
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_ENABLED", "1")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_BASE_URL", "http://aggregator.test")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_MAX_ATTEMPTS", "3")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_RETRY_BACKOFF_SEC", "0")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_TIMEOUT_SEC", "240")
+
+        ok = MagicMock()
+        ok.raise_for_status.return_value = None
+        ok.json.return_value = {"intelligence_bundle": bundle, "briefs": BRIEFS}
+
+        with patch("tradingagents.integrations.vein_aggregator_client.requests.post") as post:
+            post.side_effect = [requests.Timeout("slow"), ok]
+            result_bundle, _briefs = fetch_intelligence_bundle("NVDA", end_date="2026-07-31")
+
+        assert result_bundle is not None
+        assert post.call_count == 2
+        assert post.call_args.kwargs["timeout"] == 240.0
+
+    def test_fetch_uses_env_timeout(self, monkeypatch, bundle):
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_ENABLED", "1")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_BASE_URL", "http://aggregator.test")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_TIMEOUT_SEC", "180")
+        monkeypatch.setenv("TRADINGAGENTS_VEIN_AGGREGATOR_MAX_ATTEMPTS", "1")
+
+        ok = MagicMock()
+        ok.raise_for_status.return_value = None
+        ok.json.return_value = {"intelligence_bundle": bundle, "briefs": BRIEFS}
+
+        with patch("tradingagents.integrations.vein_aggregator_client.requests.post") as post:
+            post.return_value = ok
+            fetch_intelligence_bundle("NVDA", end_date="2026-07-31")
+
+        assert post.call_args.kwargs["timeout"] == 180.0
+
 
 class TestTradingGraphNewsRetrieval:
     def test_uses_bundle_news_retrieval_when_present(self, bundle):

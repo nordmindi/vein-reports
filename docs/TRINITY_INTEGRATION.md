@@ -44,7 +44,11 @@ Optional pull of normalized news, social, macro, and prediction-market data befo
 ```env
 TRADINGAGENTS_VEIN_AGGREGATOR_ENABLED=1
 TRADINGAGENTS_VEIN_AGGREGATOR_BASE_URL=http://localhost:3003
+# Railway: https://vein-aggregator-production.up.railway.app
 TRADINGAGENTS_VEIN_AGGREGATOR_API_KEY=<vein-aggregator-api-key>
+# Optional: cold fetches can take ~200s
+TRADINGAGENTS_VEIN_AGGREGATOR_TIMEOUT_SEC=240
+TRADINGAGENTS_VEIN_AGGREGATOR_MAX_ATTEMPTS=2
 ```
 
 Report jobs will:
