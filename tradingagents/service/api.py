@@ -374,6 +374,8 @@ class ReportValidationLiteRequest(BaseModel):
     topBlockers: list[str] = Field(default_factory=list)
     watchlistConditions: list[Any] = Field(default_factory=list)
     supplyChainContext: dict[str, Any] | None = None
+    intelligenceBrief: dict[str, Any] | None = None
+    reportContext: dict[str, Any] | None = None
 
 
 class JobRecord:
@@ -1174,9 +1176,19 @@ def download_report_pdf(job_id: str) -> FileResponse:
     summary="Lightweight signal/report fusion validation for Vein Signals",
 )
 def report_validation_lite(payload: ReportValidationLiteRequest) -> dict[str, Any]:
+    from tradingagents.validation.enrich_lite_context import enrich_lite_payload
     from tradingagents.validation.report_validation_lite import validate_report_lite
 
     body = payload.model_dump(exclude_none=True)
     body["symbol"] = payload.symbol.strip().upper()
-    return validate_report_lite(body)
+    # Reports-side optional pull of Explorer/Aggregator/local cache — Signals stays unaware.
+    enriched = enrich_lite_payload(body, jobs=jobs, reports_dir=_reports_root())
+    result = validate_report_lite(enriched)
+    provenance = enriched.get("_liteEnrichment")
+    if isinstance(provenance, dict):
+        result["liteEnrichment"] = provenance
+        report_validation = result.get("reportValidation")
+        if isinstance(report_validation, dict):
+            report_validation["liteEnrichment"] = provenance
+    return result
 

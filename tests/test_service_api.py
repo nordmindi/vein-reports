@@ -247,7 +247,8 @@ class TestServiceApiContract:
         )
         assert response.status_code == 200
         body = response.json()
-        assert body["reportValidation"]["recommendation"] == "INSUFFICIENT_EVIDENCE"
+        assert body["reportValidation"]["recommendation"] == "DEFER_TO_SIGNALS"
+        assert body["reportValidation"]["status"] == "DEFERRED"
 
     def test_context_bundle_auto_adds_supply_chain_for_pro_jobs(self, monkeypatch):
         monkeypatch.setattr(api, "run_report_job", lambda request, job_id: None)

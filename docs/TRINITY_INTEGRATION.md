@@ -83,9 +83,27 @@ POST /v1/report-validation-lite
 X-API-Key: <TRADINGAGENTS_SERVICE_API_KEY>
 ```
 
-Accepts Vein Signals `reportValidationInput` (+ optional `supplyChainContext`). Returns `reportValidation` without running the full agent graph.
+Accepts Vein Signals `reportValidationInput` plus optional report-side context:
 
-Vein Signals wiring:
+- `supplyChainContext` (Explorer)
+- `intelligenceBrief` (Aggregator)
+- `reportContext` (cached prior report bias)
+
+Returns `reportValidation` without running the full agent graph.
+
+**Loose coupling:** lite validation does **not** re-check Signals confidence/watchlist gates. If Signals is already non-tradeable → `DEFER_TO_SIGNALS`. If no independent report evidence → `NO_CONTEXT` / `NEUTRAL` (Signals fail-open). Approvals and cautions come only from report-side evidence.
+
+**Reports-side enrichment (Signals unaware):** when caller omits context, lite may optionally fill it from:
+
+| Source | When | Timeout | On failure |
+| --- | --- | --- | --- |
+| Vein Explorer | `TRADINGAGENTS_VEIN_EXPLORER_ENABLED=1` (or `TRADINGAGENTS_LITE_EXPLORER_ENABLED=1`) | `TRADINGAGENTS_LITE_EXPLORER_TIMEOUT_SEC` (default 8s) | omit / fail-open |
+| Vein Aggregator | `TRADINGAGENTS_VEIN_AGGREGATOR_ENABLED=1` (or `TRADINGAGENTS_LITE_AGGREGATOR_ENABLED=1`) | `TRADINGAGENTS_LITE_AGGREGATOR_TIMEOUT_SEC` (default 8s) | omit / fail-open |
+| Local report cache | completed jobs / `dashboard.json` for symbol | n/a | omit |
+
+Caller-supplied fields always win. Response includes `liteEnrichment` provenance (`caller` / `explorer` / `aggregator` / `local_cache` / `missing`).
+
+Vein Signals wiring (unchanged — no Explorer/Aggregator env on Signals):
 
 ```env
 REPORT_SERVICE_ENABLED=1
@@ -96,4 +114,6 @@ REPORT_SERVICE_API_KEY=<same service key>
 ## Safety
 
 - Vein Reports cannot upgrade `WATCHLIST_ONLY` / `BLOCKED` signals to trades
+- Vein Reports must not echo Signals technical blockers as its own veto
+- Soft confirm / caution preferred over inventing a second technical thesis
 - All integrations are optional — disabled env flags = standalone behavior
