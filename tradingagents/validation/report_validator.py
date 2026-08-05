@@ -112,6 +112,7 @@ def validate_final_state(
     issues.extend(_validate_required_agent_outputs(final_state, expected_keys))
     issues.extend(_validate_vein_context(final_state))
     issues.extend(_validate_golden_trend_signal(final_state))
+    issues.extend(_validate_intelligence_retrieval(final_state))
     issues.extend(_validate_instrument_resolution(final_state))
     issues.extend(_validate_market_data_freshness(final_state))
     issues.extend(_validate_current_price_alignment(final_state))
@@ -622,6 +623,31 @@ def _validate_golden_trend_signal(final_state: dict) -> list[ValidationIssue]:
                 "Vein Signals blocked execution "
                 f"({signal.get('finalSignal', 'WATCHLIST_ONLY')}); "
                 "the report cannot publish an actionable trade recommendation."
+            ),
+        )
+    ]
+
+
+def _validate_intelligence_retrieval(final_state: dict) -> list[ValidationIssue]:
+    bundle = _as_dict(final_state.get("vein_intelligence_bundle"))
+    if not isinstance(bundle, dict) or not bundle:
+        return []
+
+    retrieval = _as_dict(bundle.get("retrieval"))
+    status = str(retrieval.get("status") or "").strip().lower()
+    if status not in {"partial", "empty"}:
+        return []
+
+    warnings = list(retrieval.get("warnings") or [])[:5]
+    detail = f" warnings={warnings}" if warnings else ""
+    return [
+        ValidationIssue(
+            code="INTELLIGENCE_RETRIEVAL_INCOMPLETE",
+            severity="warning",
+            location="vein_intelligence_bundle.retrieval.status",
+            message=(
+                f"Vein Aggregator retrieval status is '{status}'. "
+                f"Treat news/social/macro context as incomplete.{detail}"
             ),
         )
     ]

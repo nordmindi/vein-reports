@@ -7,6 +7,10 @@ from tradingagents.integrations.golden_trend_client import (
     normalize_signal_result,
     pick_primary_result,
 )
+from tradingagents.integrations.intelligence_artifact import (
+    render_intelligence_markdown,
+    write_intelligence_artifacts,
+)
 from tradingagents.integrations.signal_validation_section import (
     render_signal_validation_markdown,
     write_signal_validation_artifacts,
@@ -24,6 +28,8 @@ __all__ = [
     "is_vein_aggregator_enabled",
     "normalize_signal_result",
     "pick_primary_result",
+    "render_intelligence_markdown",
     "render_signal_validation_markdown",
+    "write_intelligence_artifacts",
     "write_signal_validation_artifacts",
 ]

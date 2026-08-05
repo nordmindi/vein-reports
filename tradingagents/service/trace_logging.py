@@ -91,10 +91,13 @@ def trace_headers() -> dict[str, str]:
     headers: dict[str, str] = {}
     request_id = _request_id.get()
     correlation_id = _correlation_id.get()
+    job_id = _job_id.get()
     if request_id:
         headers["x-request-id"] = request_id
     if correlation_id:
         headers["x-correlation-id"] = correlation_id
+    if job_id:
+        headers["x-job-id"] = job_id
     return headers
 
 

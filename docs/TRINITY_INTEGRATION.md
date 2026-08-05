@@ -9,7 +9,7 @@ Vein Reports orchestrates sibling Vein services via HTTP only. No shared package
 | **Vein Aggregator** | News / sentiment / macro feeds | `vein-intelligence-v1` |
 | **Vein Reports** | Multi-agent synthesis + publication | Job API + artifacts |
 
-See also: [Vein Signals — Trinity architecture](https://github.com/nordmindi/vein-signals/blob/main/docs/TRINITY_ARCHITECTURE.md)
+See also: [Vein Signals — Platform architecture](https://github.com/nordmindi/vein-signals/blob/main/docs/PLATFORM_ARCHITECTURE.md)
 
 ## Phase 1 — Embed signal validation in reports
 
@@ -33,7 +33,7 @@ Optional Vein Explorer pull (when `context_bundle` not supplied on `POST /v1/rep
 
 ```env
 TRADINGAGENTS_VEIN_EXPLORER_ENABLED=1
-TRADINGAGENTS_VEIN_EXPLORER_BASE_URL=http://localhost:3002
+TRADINGAGENTS_VEIN_EXPLORER_BASE_URL=http://localhost:3001
 TRADINGAGENTS_VEIN_SERVICE_API_KEY=<vein-service-key>
 ```
 

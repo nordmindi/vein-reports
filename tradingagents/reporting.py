@@ -156,6 +156,17 @@ def _write_audit_report_tree(
 
         write_signal_validation_artifacts(save_path, signal)
 
+    intelligence_bundle = final_state.get("vein_intelligence_bundle")
+    intelligence_briefs = final_state.get("vein_intelligence_briefs")
+    if isinstance(intelligence_bundle, dict) or isinstance(intelligence_briefs, dict):
+        from tradingagents.integrations.intelligence_artifact import write_intelligence_artifacts
+
+        write_intelligence_artifacts(
+            save_path,
+            intelligence_bundle if isinstance(intelligence_bundle, dict) else None,
+            intelligence_briefs if isinstance(intelligence_briefs, dict) else None,
+        )
+
     analysts_dir = save_path / "1_analysts"
     for key, filename in (
         ("market_report", "market.md"),

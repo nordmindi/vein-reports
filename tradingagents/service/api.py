@@ -318,6 +318,7 @@ class CreateReportResponse(BaseModel):
     validation_url: str
     evidence_url: str
     metrics_url: str
+    intelligence_url: str
 
 
 class ReportUsageMetrics(BaseModel):
@@ -356,6 +357,7 @@ class ReportJobResponse(BaseModel):
     validation_url: str | None = None
     evidence_url: str | None = None
     metrics_url: str | None = None
+    intelligence_url: str | None = None
     metrics: ReportJobMetrics | None = None
 
 
@@ -672,7 +674,23 @@ def _parse_dt(value: str | None) -> datetime | None:
 
 def require_service_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = os.getenv("TRADINGAGENTS_SERVICE_API_KEY")
-    if expected and x_api_key != expected:
+    env = (
+        os.getenv("TRADINGAGENTS_ENV")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("NODE_ENV")
+        or os.getenv("ENV")
+        or ""
+    ).strip().lower()
+    production = env in {"production", "prod"}
+    if not expected:
+        if production:
+            log_warning("service_auth_misconfigured", reason="missing_api_key_in_production")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="TRADINGAGENTS_SERVICE_API_KEY is required in production",
+            )
+        return
+    if x_api_key != expected:
         log_warning("service_auth_failed", reason="invalid_api_key")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -809,6 +827,69 @@ def health() -> dict[str, str]:
     return {"status": "ok", "active_jobs": str(active_jobs), "total_jobs": str(len(jobs))}
 
 
+def _ping(url: str, *, timeout: float = 2.0) -> dict[str, Any]:
+    import urllib.error
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return {"ok": True, "statusCode": getattr(response, "status", 200)}
+    except Exception as exc:  # noqa: BLE001 — readiness must never raise
+        return {"ok": False, "error": str(exc), "errorType": exc.__class__.__name__}
+
+
+@app.get("/ready")
+def ready() -> dict[str, Any]:
+    """Readiness: local process plus optional sibling reachability when integrations are enabled."""
+    from tradingagents.integrations.golden_trend_client import is_golden_trend_enabled
+    from tradingagents.integrations.vein_aggregator_client import is_vein_aggregator_enabled
+    from tradingagents.integrations.vein_explorer_client import is_vein_pull_enabled
+
+    integrations: dict[str, Any] = {
+        "signals": {"enabled": is_golden_trend_enabled()},
+        "explorer": {"enabled": is_vein_pull_enabled()},
+        "aggregator": {"enabled": is_vein_aggregator_enabled()},
+        "authConfigured": bool(os.getenv("TRADINGAGENTS_SERVICE_API_KEY")),
+    }
+
+    if is_golden_trend_enabled():
+        base = os.getenv("TRADINGAGENTS_GOLDEN_TREND_BASE_URL", "").strip().rstrip("/")
+        integrations["signals"]["baseUrl"] = base or None
+        integrations["signals"]["reachable"] = _ping(f"{base}/api/health")["ok"] if base else False
+
+    if is_vein_pull_enabled():
+        base = os.getenv("TRADINGAGENTS_VEIN_EXPLORER_BASE_URL", "").strip().rstrip("/")
+        integrations["explorer"]["baseUrl"] = base or None
+        integrations["explorer"]["reachable"] = _ping(f"{base}/v1/health")["ok"] if base else False
+
+    if is_vein_aggregator_enabled():
+        base = os.getenv("TRADINGAGENTS_VEIN_AGGREGATOR_BASE_URL", "").strip().rstrip("/")
+        integrations["aggregator"]["baseUrl"] = base or None
+        integrations["aggregator"]["reachable"] = _ping(f"{base}/health")["ok"] if base else False
+
+    ready_ok = True
+    for name in ("signals", "explorer", "aggregator"):
+        entry = integrations[name]
+        if entry.get("enabled") and entry.get("reachable") is False:
+            ready_ok = False
+
+    env = (
+        os.getenv("TRADINGAGENTS_ENV")
+        or os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("NODE_ENV")
+        or os.getenv("ENV")
+        or ""
+    ).strip().lower()
+    if env in {"production", "prod"} and not integrations["authConfigured"]:
+        ready_ok = False
+
+    return {
+        "status": "ready" if ready_ok else "degraded",
+        "ready": ready_ok,
+        "integrations": integrations,
+    }
+
+
 @app.post(
     "/v1/reports",
     response_model=CreateReportResponse,
@@ -899,6 +980,7 @@ def create_report(payload: CreateReportRequest) -> CreateReportResponse:
         validation_url=_report_url(job_id, "validation"),
         evidence_url=_report_url(job_id, "evidence"),
         metrics_url=_report_url(job_id, "metrics"),
+        intelligence_url=_report_url(job_id, "intelligence"),
     )
 
 
@@ -927,6 +1009,7 @@ def get_report(job_id: str) -> ReportJobResponse:
         validation_url=_report_url(job_id, "validation") if result else None,
         evidence_url=_report_url(job_id, "evidence") if result else None,
         metrics_url=_report_url(job_id, "metrics") if result else None,
+        intelligence_url=_report_url(job_id, "intelligence") if result else None,
         metrics=metrics,
     )
 
@@ -1013,6 +1096,16 @@ def download_validation_report(job_id: str) -> dict[str, Any]:
 def download_decision_evidence(job_id: str) -> dict[str, Any]:
     """Return decision_evidence_bundle.json for downstream audit and dashboard ingestion."""
     return _read_completed_artifact(job_id, "decision_evidence_bundle.json")
+
+
+@app.get(
+    "/v1/reports/{job_id}/intelligence",
+    dependencies=[Depends(require_service_key)],
+    summary="Download Vein Aggregator intelligence provenance",
+)
+def download_intelligence_bundle(job_id: str) -> dict[str, Any]:
+    """Return intelligence_bundle.json with retrieval status and briefs when Aggregator was used."""
+    return _read_completed_artifact(job_id, "intelligence_bundle.json")
 
 
 @app.get("/v1/reports/{job_id}/pdf", dependencies=[Depends(require_service_key)])
