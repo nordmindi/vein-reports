@@ -4,7 +4,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HOST=0.0.0.0 \
-    PORT=8000
+    PORT=8000 \
+    TRADINGAGENTS_SERVICE_REPORTS_DIR=/home/app/reports/api \
+    TRADINGAGENTS_SERVICE_CACHE_DIR=/home/app/cache \
+    TRADINGAGENTS_SERVICE_MEMORY_DIR=/home/app/memory
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -12,8 +15,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user
-RUN useradd --create-home --shell /bin/bash app
+# Create a non-root user and writable data dirs (volume mounts may replace these at runtime)
+RUN useradd --create-home --shell /bin/bash app \
+    && mkdir -p /home/app/reports/api/_jobs /home/app/reports/api/_logs /home/app/cache /home/app/memory /app/reports \
+    && chown -R app:app /home/app /app/reports
+
 WORKDIR /home/app
 
 # Copy requirements and install Python dependencies
@@ -23,21 +29,23 @@ COPY --chown=app:app cli/ cli/
 COPY --chown=app:app scripts/ scripts/
 COPY --chown=app:app assets/ assets/
 
+RUN chmod +x /home/app/scripts/docker-entrypoint-service.sh /home/app/scripts/run_service.py
+
 # Install build dependencies first (setuptools required by pyproject.toml build-system)
 RUN pip install --no-cache-dir "setuptools>=61.0" wheel
 
 # Install the package
 RUN pip install --no-cache-dir .
 
-# Switch to the non-root user
-USER app
+# Start as root so the entrypoint can chown Railway volume mounts, then drop to app
+USER root
 
 # Expose the port
 EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Run the service
-ENTRYPOINT ["python", "scripts/run_service.py"]
+ENTRYPOINT ["/home/app/scripts/docker-entrypoint-service.sh"]
+CMD ["python", "scripts/run_service.py"]

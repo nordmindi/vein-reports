@@ -8,6 +8,25 @@ from tradingagents.service.runner import ReportRequest, ReportResult
 
 @pytest.mark.unit
 class TestPersistedJobStore:
+    def test_write_job_record_permission_error_returns_503(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path / "reports"))
+        api.jobs.clear()
+        record = api.JobRecord(
+            "job-perm",
+            ReportRequest(ticker="FCX", analysis_date="2026-08-05"),
+        )
+
+        def boom(*_args, **_kwargs):
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(api.Path, "mkdir", boom)
+
+        with pytest.raises(api.HTTPException) as exc_info:
+            api._write_job_record(record)
+
+        assert exc_info.value.status_code == 503
+        assert "not writable" in str(exc_info.value.detail).lower()
+
     def test_get_job_loads_persisted_running_record(self, monkeypatch, tmp_path):
         monkeypatch.setenv("TRADINGAGENTS_SERVICE_REPORTS_DIR", str(tmp_path))
         api.jobs.clear()

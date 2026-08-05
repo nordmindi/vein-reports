@@ -563,7 +563,25 @@ def _job_store_path(job_id: str) -> Path:
 
 
 def _write_job_record(record: JobRecord) -> None:
-    _job_store_dir().mkdir(parents=True, exist_ok=True)
+    try:
+        _job_store_dir().mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        log_error(
+            "job_store_mkdir_failed",
+            path=str(_job_store_dir()),
+            error=str(exc),
+            errorType=exc.__class__.__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Report storage is not writable "
+                f"({_job_store_dir()}). "
+                "Set TRADINGAGENTS_SERVICE_REPORTS_DIR to a writable path "
+                "(recommended: /home/app/reports/api) and ensure the volume mount "
+                "is chowned for the app user."
+            ),
+        ) from exc
     payload: dict[str, Any] = {
         "job_id": record.job_id,
         "status": record.status.value,
@@ -577,8 +595,20 @@ def _write_job_record(record: JobRecord) -> None:
     }
     path = _job_store_path(record.job_id)
     tmp_path = path.with_suffix(".tmp")
-    tmp_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-    tmp_path.replace(path)
+    try:
+        tmp_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        tmp_path.replace(path)
+    except OSError as exc:
+        log_error(
+            "job_store_write_failed",
+            path=str(path),
+            error=str(exc),
+            errorType=exc.__class__.__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to persist job metadata under {_job_store_dir()}: {exc}",
+        ) from exc
 
 
 def _load_job_record(job_id: str) -> JobRecord | None:

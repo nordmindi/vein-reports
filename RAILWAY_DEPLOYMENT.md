@@ -56,16 +56,28 @@ TRADINGAGENTS_VEIN_SERVICE_API_KEY=<vein-service-key>
 
 ## Job durability (important)
 
-Jobs are persisted under `TRADINGAGENTS_SERVICE_REPORTS_DIR` (default `reports/api`).
+Jobs are persisted under `TRADINGAGENTS_SERVICE_REPORTS_DIR`
+(container default: `/home/app/reports/api`).
 
 On Railway:
 
-1. Attach a **volume** mounted at `/app/reports` (or your chosen path)
+1. Attach a **volume** mounted at `/home/app/reports` (preferred) **or** `/app/reports`
 2. Set:
 
 ```env
-TRADINGAGENTS_SERVICE_REPORTS_DIR=/app/reports/api
+# Preferred (matches image default and app user home)
+TRADINGAGENTS_SERVICE_REPORTS_DIR=/home/app/reports/api
+
+# Also supported — entrypoint chowns /app/reports when starting as root
+# TRADINGAGENTS_SERVICE_REPORTS_DIR=/app/reports/api
 ```
+
+`scripts/docker-entrypoint-service.sh` runs as root on boot, creates `_jobs` / `_logs`,
+`chown`s the mount for user `app`, then drops privileges. If the configured path is
+still not writable, it falls back to `/home/app/reports/api`.
+
+**Common failure:** volume at `/app/reports` without the new entrypoint →
+`PermissionError: ... '/app/reports/api'` and Explorer shows HTTP 503.
 
 On restart:
 
@@ -105,6 +117,7 @@ curl -X POST "https://<your-service>.up.railway.app/v1/reports" \
 |-------|-----|
 | `minimax-m2.5 was retired` | Set deep/quick think LLMs to `minimax-m2.7` or newer |
 | Job 404 after deploy | Mount a volume for `TRADINGAGENTS_SERVICE_REPORTS_DIR` |
+| 503 / `Permission denied: '/app/reports/api'` | Remount volume at `/home/app/reports` (preferred) or redeploy so entrypoint can `chown`; set `TRADINGAGENTS_SERVICE_REPORTS_DIR=/home/app/reports/api` |
 | Aggregator unused / empty news | Raise `TRADINGAGENTS_VEIN_AGGREGATOR_TIMEOUT_SEC` (cold fetches ~200s) |
 | Research Manager structured-output warning | Expected with thinking models; free-text fallback continues |
 | 401 on `/v1/reports` | Match `X-API-Key` to `TRADINGAGENTS_SERVICE_API_KEY` |

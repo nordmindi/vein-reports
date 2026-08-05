@@ -4,7 +4,6 @@
     "dockerfilePath": "Dockerfile.service"
   },
   "deploy": {
-    "startCommand": "python scripts/run_service.py",
     "restartPolicy": "always"
   }
 }
