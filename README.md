@@ -334,6 +334,52 @@ For detailed deployment instructions for cloud environments (Kubernetes, AWS, GC
 
 The service provides a REST API for submitting report jobs (equity **ticker** or thematic **target**), checking status, downloading PDFs, and fetching machine-readable dashboard, validation, evidence, and full-state JSON artifacts. Swagger is available at `/docs` when the service is running. See `docs/saas-service-api.md` for the current API contract, `docs/TRINITY_INTEGRATION.md` for platform wiring, `docs/trading-report-service-vein-integration.md` for VEIN supply-chain context, and `scripts/client_example.py` for a client implementation example.
 
+## Performance Optimization
+
+TradingAgents provides built-in tier profiles and configuration options to optimize report generation speed without compromising analytical quality. See **[docs/PERFORMANCE_OPTIMIZATION.md](docs/PERFORMANCE_OPTIMIZATION.md)** for the comprehensive guide.
+
+**Quick optimization options:**
+
+**Tier Profiles** (built-in presets via `report_tier` parameter or `TRADINGAGENTS_REPORT_TIER` env var):
+- **`free`** — Ultra-fast (60-90s): Lite pipeline, 2 tool rounds/analyst, limited data collection
+- **`pro`** — Balanced (120-180s, **default**): Full debate/risk pipeline, 3 tool rounds, comprehensive data
+- **`team`** — Maximum depth (150-200s): All features enabled, deepest reasoning models
+
+**Custom Configuration** (API request or environment variables):
+```json
+{
+  "ticker": "AAPL",
+  "report_tier": "custom",
+  "pipeline_mode": "full",
+  "max_tool_rounds_per_analyst": 2,
+  "news_article_limit": 12,
+  "use_deep_research_manager": false,
+  "use_deep_portfolio_manager": false
+}
+```
+
+**Analyst Selection** (run only what you need):
+```json
+{
+  "ticker": "AAPL",
+  "selected_analysts": ["market", "news"]
+}
+```
+
+**Environment Variables** (for service-wide defaults):
+```bash
+TRADINGAGENTS_REPORT_TIER=pro
+TRADINGAGENTS_NEWS_ARTICLE_LIMIT=12
+TRADINGAGENTS_GLOBAL_NEWS_ARTICLE_LIMIT=6
+```
+
+**Key Trade-offs:**
+- `free` tier: 40-60% faster, single-pass decision (skips debate/risk validation)
+- Custom `max_tool_rounds_per_analyst: 2`: 20-30% faster, retains full pipeline
+- Fewer analysts: ~10-15% faster per analyst removed
+
+See the **[Performance Optimization Guide](docs/PERFORMANCE_OPTIMIZATION.md)** for ready-to-use presets, detailed metrics, and advanced optimization strategies.
+
 ## Persistence and Recovery
 
 TradingAgents persists two kinds of state across runs.
